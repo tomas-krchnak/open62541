@@ -1446,6 +1446,11 @@ add_dependencies(open62541-object open62541-code-generation)
 
 # Ensure that the open62541::open62541 alias can be used inside open62541's build
 add_library(open62541::open62541 ALIAS open62541)
+if(BUILD_SHARED_LIBS)
+    include(GenerateExportHeader)
+    generate_export_header(open62541 EXPORT_FILE_NAME ${CMAKE_BINARY_DIR}/exports/open62541_export.h)
+    include_directories("${CMAKE_BINARY_DIR}/exports")
+endif()
 
 # Export Symbols
 target_compile_definitions(open62541-object PRIVATE -DUA_DYNAMIC_LINKING_EXPORT)

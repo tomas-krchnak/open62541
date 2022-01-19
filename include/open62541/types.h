@@ -19,6 +19,7 @@
 #include <open62541/config.h>
 #include <open62541/common.h>
 #include <open62541/statuscodes.h>
+#include <open62541_export.h>
 
 _UA_BEGIN_DECLS
 
@@ -186,7 +187,7 @@ UA_String_fromChars(const char *src) UA_FUNC_ATTR_WARN_UNUSED_RESULT;
 UA_Boolean UA_EXPORT
 UA_String_equal(const UA_String *s1, const UA_String *s2);
 
-UA_EXPORT extern const UA_String UA_STRING_NULL;
+OPEN62541_EXPORT extern const UA_String UA_STRING_NULL;
 
 /**
  * ``UA_STRING`` returns a string pointing to the original char-array.
@@ -283,7 +284,7 @@ typedef struct {
     UA_Byte   data4[8];
 } UA_Guid;
 
-UA_EXPORT extern const UA_Guid UA_GUID_NULL;
+OPEN62541_EXPORT extern const UA_Guid UA_GUID_NULL;
 
 UA_Boolean UA_EXPORT UA_Guid_equal(const UA_Guid *g1, const UA_Guid *g2);
 
@@ -309,7 +310,7 @@ UA_GUID(const char *chars) {
  * A sequence of octets. */
 typedef UA_String UA_ByteString;
 
-UA_EXPORT extern const UA_ByteString UA_BYTESTRING_NULL;
+OPEN62541_EXPORT extern const UA_ByteString UA_BYTESTRING_NULL;
 
 /* Allocates memory of size length for the bytestring.
  * The content is not set to zero. */
@@ -385,7 +386,7 @@ typedef struct {
     } identifier;
 } UA_NodeId;
 
-UA_EXPORT extern const UA_NodeId UA_NODEID_NULL;
+OPEN62541_EXPORT extern const UA_NodeId UA_NODEID_NULL;
 
 UA_Boolean UA_EXPORT UA_NodeId_isNull(const UA_NodeId *p);
 
@@ -483,7 +484,7 @@ typedef struct {
     UA_UInt32 serverIndex;
 } UA_ExpandedNodeId;
 
-UA_EXPORT extern const UA_ExpandedNodeId UA_EXPANDEDNODEID_NULL;
+OPEN62541_EXPORT extern const UA_ExpandedNodeId UA_EXPANDEDNODEID_NULL;
 
 UA_StatusCode UA_EXPORT
 UA_ExpandedNodeId_print(const UA_ExpandedNodeId *id, UA_String *output);

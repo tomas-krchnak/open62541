@@ -16,6 +16,7 @@
 #define UA_CLIENT_HIGHLEVEL_H_
 
 #include <open62541/client.h>
+#include <open62541_export.h>
 
 _UA_BEGIN_DECLS
 
@@ -492,16 +493,17 @@ UA_Client_deleteNode(UA_Client *client, const UA_NodeId nodeId,
 #define UA_DEFAULT_ATTRIBUTES_DEFINED
 /* The default for variables is "BaseDataType" for the datatype, -2 for the
  * valuerank and a read-accesslevel. */
-UA_EXPORT extern const UA_VariableAttributes UA_VariableAttributes_default;
-UA_EXPORT extern const UA_VariableTypeAttributes UA_VariableTypeAttributes_default;
+OPEN62541_EXPORT extern const UA_VariableAttributes UA_VariableAttributes_default;
+OPEN62541_EXPORT extern const UA_VariableTypeAttributes UA_VariableTypeAttributes_default;
 /* Methods are executable by default */
-UA_EXPORT extern const UA_MethodAttributes UA_MethodAttributes_default;
+OPEN62541_EXPORT extern const UA_MethodAttributes UA_MethodAttributes_default;
 /* The remaining attribute definitions are currently all zeroed out */
-UA_EXPORT extern const UA_ObjectAttributes UA_ObjectAttributes_default;
-UA_EXPORT extern const UA_ObjectTypeAttributes UA_ObjectTypeAttributes_default;
-UA_EXPORT extern const UA_ReferenceTypeAttributes UA_ReferenceTypeAttributes_default;
-UA_EXPORT extern const UA_DataTypeAttributes UA_DataTypeAttributes_default;
-UA_EXPORT extern const UA_ViewAttributes UA_ViewAttributes_default;
+OPEN62541_EXPORT extern const UA_ObjectAttributes UA_ObjectAttributes_default;
+OPEN62541_EXPORT extern const UA_ObjectTypeAttributes UA_ObjectTypeAttributes_default;
+OPEN62541_EXPORT extern const UA_ReferenceTypeAttributes
+    UA_ReferenceTypeAttributes_default;
+OPEN62541_EXPORT extern const UA_DataTypeAttributes UA_DataTypeAttributes_default;
+OPEN62541_EXPORT extern const UA_ViewAttributes UA_ViewAttributes_default;
 #endif
 
 /* Don't call this function, use the typed versions */

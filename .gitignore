@@ -92,3 +92,4 @@ Pipfile.lock
 .vim/
 /.vs
 /examples/build
+/out/build/x64-Debug

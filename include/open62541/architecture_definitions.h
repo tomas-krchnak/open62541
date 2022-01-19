@@ -169,25 +169,25 @@ extern UA_THREAD_LOCAL void * (*UA_reallocSingleton)(void *ptr, size_t size);
  * Dynamic Linking
  * ---------------
  * Explicit attribute for functions to be exported in a shared library. */
-#if defined(_WIN32) && defined(UA_DYNAMIC_LINKING)
-# ifdef UA_DYNAMIC_LINKING_EXPORT /* export dll */
-#  ifdef __GNUC__
-#   define UA_EXPORT __attribute__ ((dllexport))
-#  else
-#   define UA_EXPORT __declspec(dllexport)
-#  endif
-# else /* import dll */
-#  ifdef __GNUC__
-#   define UA_EXPORT __attribute__ ((dllimport))
-#  else
-#   define UA_EXPORT __declspec(dllimport)
-#  endif
-# endif
-#else /* non win32 */
-# if __GNUC__ || __clang__
-#  define UA_EXPORT __attribute__ ((visibility ("default")))
-# endif
-#endif
+//#if defined(_WIN32) && defined(UA_DYNAMIC_LINKING)
+//# ifdef UA_DYNAMIC_LINKING_EXPORT /* export dll */
+//#  ifdef __GNUC__
+//#   define UA_EXPORT __attribute__ ((dllexport))
+//#  else
+//#   define UA_EXPORT __declspec(dllexport)
+//#  endif
+//# else /* import dll */
+//#  ifdef __GNUC__
+//#   define UA_EXPORT __attribute__ ((dllimport))
+//#  else
+//#   define UA_EXPORT __declspec(dllimport)
+//#  endif
+//# endif
+//#else /* non win32 */
+//# if __GNUC__ || __clang__
+//#  define UA_EXPORT __attribute__ ((visibility ("default")))
+//# endif
+//#endif
 #ifndef UA_EXPORT
 # define UA_EXPORT /* fallback to default */
 #endif

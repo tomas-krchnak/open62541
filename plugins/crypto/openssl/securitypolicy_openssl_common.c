@@ -213,7 +213,7 @@ UA_Openssl_RSA_Private_Decrypt (UA_ByteString *       data,
         decryptedBytes = RSA_private_decrypt (keySize,
                            data->data + cipherOffset, /* what to decrypt  */
                            buf,                       /* where to decrypt */
-                           get_pkey_rsa(privateKey),      /* private key      */
+                           (RSA*)get_pkey_rsa(privateKey),      /* private key      */
                            padding
                            );
         if (decryptedBytes < 0) {
@@ -274,7 +274,7 @@ UA_Openssl_RSA_Public_Encrypt  (const UA_ByteString * message,
     }
 
     /* get the encrypted block size */
-    rsa = get_pkey_rsa (evpPublicKey);
+    rsa = (RSA*)get_pkey_rsa (evpPublicKey);
     keySize = (size_t) RSA_size (rsa);
     if (keySize == 0) {
         ret = UA_STATUSCODE_BADINTERNALERROR;
@@ -435,7 +435,7 @@ UA_Openssl_RSA_Public_GetKeyLength (X509 *     publicKeyX509,
     if (evpKey == NULL) {
         return  UA_STATUSCODE_BADINTERNALERROR;
     }
-    RSA * rsa = get_pkey_rsa (evpKey);
+    RSA * rsa = (RSA*)get_pkey_rsa (evpKey);
     *keyLen = RSA_size(rsa);
     EVP_PKEY_free (evpKey);
 

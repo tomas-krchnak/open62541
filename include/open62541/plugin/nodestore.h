@@ -18,6 +18,7 @@
  * / OPC UA services to interact with the information model. */
 
 #include <open62541/util.h>
+#include <open62541_export.h>
 #include "aa_tree.h"
 
 _UA_BEGIN_DECLS
@@ -213,8 +214,8 @@ typedef struct {
     UA_UInt32 bits[UA_REFERENCETYPESET_MAX / 32];
 } UA_ReferenceTypeSet;
 
-UA_EXPORT extern const UA_ReferenceTypeSet UA_REFERENCETYPESET_NONE;
-UA_EXPORT extern const UA_ReferenceTypeSet UA_REFERENCETYPESET_ALL;
+OPEN62541_EXPORT extern const UA_ReferenceTypeSet UA_REFERENCETYPESET_NONE;
+OPEN62541_EXPORT extern const UA_ReferenceTypeSet UA_REFERENCETYPESET_ALL;
 
 static UA_INLINE void
 UA_ReferenceTypeSet_init(UA_ReferenceTypeSet *set) {

@@ -1765,9 +1765,15 @@ writeAttribute(UA_Server *server, UA_Session *session,
     wvalue.nodeId = *nodeId;
     wvalue.attributeId = attributeId;
     wvalue.value.hasValue = true;
-    if(attr_type == &UA_TYPES[UA_TYPES_VARIANT]) {
+
+    UA_UInt32 variantTypeIdentifier =
+        *(&UA_TYPES[UA_TYPES_VARIANT].typeId.identifier.numeric);
+    UA_UInt32 dataValueTypeIdentifier =
+        *(&UA_TYPES[UA_TYPES_DATAVALUE].typeId.identifier.numeric);
+
+    if(attr_type->typeId.identifier.numeric == variantTypeIdentifier) {
         wvalue.value.value = *(const UA_Variant*)attr;
-    } else if(attr_type == &UA_TYPES[UA_TYPES_DATAVALUE]) {
+    } else if(attr_type->typeId.identifier.numeric == dataValueTypeIdentifier) {
         wvalue.value = *(const UA_DataValue*)attr;
     } else {
         /* hacked cast. the target WriteValue is used as const anyway */
@@ -1997,7 +2003,7 @@ writeObjectProperty(UA_Server *server, const UA_NodeId objectId,
     return retval;
 }
 
-UA_StatusCode UA_EXPORT
+UA_StatusCode 
 UA_Server_writeObjectProperty_scalar(UA_Server *server, const UA_NodeId objectId,
                                      const UA_QualifiedName propertyName,
                                      const void *value, const UA_DataType *type) {
