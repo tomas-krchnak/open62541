@@ -742,6 +742,7 @@ ENCODE_JSON(DateTime) {
     UA_DateTimeStruct tSt = UA_DateTime_toStruct(*src);
 
     /* Format: yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSS'Z' is used. max 30 bytes.*/
+    /* Padded with 0's if needed to 24 or 30 bytes. */
     UA_Byte buffer[UA_JSON_DATETIME_LENGTH];
 
     printNumber(tSt.year, &buffer[0], 4);
@@ -760,11 +761,12 @@ ENCODE_JSON(DateTime) {
     printNumber(tSt.microSec, &buffer[23], 3);
     printNumber(tSt.nanoSec, &buffer[26], 3);
 
-    size_t length = 28;
-    while (buffer[length] == '0')
-        length--;
-    if (length != 19)
-         length++;
+    size_t length = 29;
+    if(tSt.microSec == 0 && tSt.nanoSec == 0) {
+        length -= 6;
+        if(tSt.milliSec == 0)
+            length -= 4;
+    }
 
     buffer[length] = 'Z';
     UA_String str = {length + 1, buffer};
