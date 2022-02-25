@@ -409,7 +409,7 @@ if(UA_ENABLE_PUBSUB_BUFMALLOC)
     endif()
 endif()
 
-option(UA_ENABLE_JSON_ENCODING "Enable Json encoding (EXPERIMENTAL)" OFF)
+option(UA_ENABLE_JSON_ENCODING "Enable Json encoding (EXPERIMENTAL)" ON)
 mark_as_advanced(UA_ENABLE_JSON_ENCODING)
 
 option(UA_ENABLE_PUBSUB_MQTT "Enable publish/subscribe with mqtt (experimental)" OFF)
@@ -1043,10 +1043,12 @@ if(UA_ENABLE_HISTORIZING)
          ${PROJECT_SOURCE_DIR}/plugins/include/open62541/plugin/historydata/history_database_default.h
          ${PROJECT_SOURCE_DIR}/plugins/include/open62541/plugin/historydata/history_data_gathering_default.h
          ${PROJECT_SOURCE_DIR}/plugins/include/open62541/plugin/historydata/history_data_backend_memory.h
+         ${PROJECT_SOURCE_DIR}/plugins/include/open62541/plugin/historydata/history_data_backend_sqlite.h
          )
     list(APPEND default_plugin_sources
          ${PROJECT_SOURCE_DIR}/plugins/historydata/sqlite/sqlite3.c
          ${PROJECT_SOURCE_DIR}/plugins/historydata/ua_history_data_backend_memory.c
+         ${PROJECT_SOURCE_DIR}/plugins/historydata/ua_history_data_backend_sqlite.c
          ${PROJECT_SOURCE_DIR}/plugins/historydata/ua_history_data_gathering_default.c
          ${PROJECT_SOURCE_DIR}/plugins/historydata/ua_history_database_default.c
          )
