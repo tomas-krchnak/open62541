@@ -1037,6 +1037,7 @@ endif()
 if(UA_ENABLE_HISTORIZING)
 
     list(APPEND default_plugin_headers
+         ${PROJECT_SOURCE_DIR}/plugins/include/open62541/plugin/historydata/sqlite/sqlite3.h
          ${PROJECT_SOURCE_DIR}/plugins/include/open62541/plugin/historydata/history_data_backend.h
          ${PROJECT_SOURCE_DIR}/plugins/include/open62541/plugin/historydata/history_data_gathering.h
          ${PROJECT_SOURCE_DIR}/plugins/include/open62541/plugin/historydata/history_database_default.h
@@ -1044,6 +1045,7 @@ if(UA_ENABLE_HISTORIZING)
          ${PROJECT_SOURCE_DIR}/plugins/include/open62541/plugin/historydata/history_data_backend_memory.h
          )
     list(APPEND default_plugin_sources
+         ${PROJECT_SOURCE_DIR}/plugins/historydata/sqlite/sqlite3.c
          ${PROJECT_SOURCE_DIR}/plugins/historydata/ua_history_data_backend_memory.c
          ${PROJECT_SOURCE_DIR}/plugins/historydata/ua_history_data_gathering_default.c
          ${PROJECT_SOURCE_DIR}/plugins/historydata/ua_history_database_default.c
@@ -1390,6 +1392,7 @@ else()
     if(UA_FORCE_CPP)
         set_source_files_properties(${lib_sources} PROPERTIES LANGUAGE CXX)
         set_source_files_properties(${default_plugin_sources} ${ua_architecture_sources} PROPERTIES LANGUAGE CXX)
+        set_source_files_properties( ${PROJECT_SOURCE_DIR}/plugins/historydata/sqlite/sqlite3.c PROPERTIES LANGUAGE C )
     endif()
 
     if(UA_ENABLE_ENCRYPTION_LIBRESSL)
