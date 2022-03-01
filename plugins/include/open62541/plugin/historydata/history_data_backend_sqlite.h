@@ -25,7 +25,10 @@ UA_HistoryDataBackend_SQLite(UA_HistoryDataBackend parent, const char *dbFilePat
  * following the logic of circular buffers.
  */
 UA_HistoryDataBackend UA_EXPORT
-UA_HistoryDataBackend_SQLite_Circular(UA_HistoryDataBackend parent, const char* dbFilePath);
+UA_HistoryDataBackend_SQLite_Circular(UA_HistoryDataBackend parent,
+                                      const char *dbFilePath,
+                                      size_t pruneInterval,
+                                      size_t maxValuesPerNode);
 
 void UA_EXPORT
 UA_HistoryDataBackend_SQLite_clear(UA_HistoryDataBackend backend);

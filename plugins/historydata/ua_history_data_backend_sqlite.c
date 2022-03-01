@@ -11,6 +11,9 @@
 typedef struct {
     UA_HistoryDataBackend parent;
     sqlite3 *sqldb;
+    size_t pruneInterval;
+    size_t pruneCounter;
+    size_t maxValuesPerNode;
 } UA_SqliteStoreContext;
 
 static void
@@ -48,15 +51,72 @@ CheckNull(const char *cString)
         return "NULL";
 }
 
-static UA_StatusCode
-serverSetHistoryData_backend_sqlite_Circular(UA_Server *server, void *context, 
-                                                 const UA_NodeId *sessionId, void *sessionContext,
-                                                 const UA_NodeId *nodeId, UA_Boolean historizing,
-                                                 const UA_DataValue *value)
+static bool
+sqliteBackend_is_prune_enabled(UA_SqliteStoreContext *ctx)
 {
-    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
+    if(!ctx->pruneInterval)
+        return false;
+    if(!ctx->maxValuesPerNode)
+        return false;
 
+    return true;
+}
+
+static void
+sqliteBackend_db_prune_circular(UA_SqliteStoreContext *ctx)
+{
+    if(!ctx)
+        return;
+    if(!sqliteBackend_is_prune_enabled(ctx))
+        return;
+
+    ctx->pruneCounter = 0;
+
+    const char *sqlFmt =
+        "DELETE FROM HISTORY"
+        " WHERE EXISTS ("
+        "   SELECT * "
+        "   FROM ("
+        "       SELECT TIMESTAMP, SESSIONID, NODEID, DATAVALUE, row_number()"
+        "         OVER ( PARTITION BY NODEID ORDER BY TIMESTAMP DESC) AS timestamp_sequence"
+        "         FROM HISTORY) AS prune"
+        "     WHERE timestamp_sequence > %ld"
+        "       AND HISTORY.TIMESTAMP = prune.TIMESTAMP"
+        "       AND HISTORY.NODEID    = prune.NODEID"
+        "       AND HISTORY.SESSIONID = prune.SESSIONID"
+        ")";
+    size_t len = strlen(sqlFmt) * 2;
+
+    char *sqlCmd = (char *)UA_malloc(len);
+    if(sqlCmd) {
+        snprintf(sqlCmd, len, sqlFmt, ctx->maxValuesPerNode);
+        int sqlRet = sqlite3_exec(ctx->sqldb, sqlCmd, NULL, NULL, NULL);
+        UA_free(sqlCmd);
+    }
+}
+
+static void
+sqliteBackend_db_prune_if_needed(UA_SqliteStoreContext *ctx)
+{
+    if(!ctx)
+        return;
+    if(!sqliteBackend_is_prune_enabled(ctx))
+        return;
+
+    ctx->pruneCounter++;
+    if(ctx->pruneCounter < ctx->pruneInterval)
+        return;
+
+    if(ctx->maxValuesPerNode > 0)
+        sqliteBackend_db_prune_circular(ctx);
+}
+
+static UA_StatusCode
+sqliteBackend_db_storeHistoryEntry(UA_SqliteStoreContext *ctx,
+                                   const UA_NodeId *sessionId,
+                                   const UA_NodeId *nodeId,
+                                   const UA_DataValue *value)
+{
     /* Encode the sessionId */
     UA_ByteString sessionIdAsJson = UA_BYTESTRING_NULL;
     UA_ByteString nodeIdAsJson = UA_BYTESTRING_NULL;
@@ -65,26 +125,6 @@ serverSetHistoryData_backend_sqlite_Circular(UA_Server *server, void *context,
     UA_encodeJson(sessionId, &UA_TYPES[UA_TYPES_NODEID], &sessionIdAsJson, NULL);
     UA_encodeJson(nodeId, &UA_TYPES[UA_TYPES_NODEID], &nodeIdAsJson, NULL);
     UA_encodeJson(value, &UA_TYPES[UA_TYPES_DATAVALUE], &valueAsJson, NULL);
-
-    /* Decode the nodeId */
-    UA_NodeId newSessionId = UA_NODEID_NULL;
-    UA_NodeId newNodeId = UA_NODEID_NULL;
-    UA_DataValue newJsonValue;
-
-    UA_decodeJson(&sessionIdAsJson, &newSessionId, &UA_TYPES[UA_TYPES_NODEID], NULL);
-    UA_decodeJson(&nodeIdAsJson, &newNodeId, &UA_TYPES[UA_TYPES_NODEID], NULL);
-    UA_decodeJson(&valueAsJson, &newJsonValue, &UA_TYPES[UA_TYPES_DATAVALUE], NULL);
-
-    UA_String outSid = UA_STRING_NULL;
-    UA_NodeId_print(sessionId, &outSid);
-    UA_String outNid = UA_STRING_NULL;
-    UA_NodeId_print(nodeId, &outNid);
-    UA_String outTid = UA_STRING_NULL;
-    UA_NodeId_print(&value->value.type->typeId, &outTid);
-    UA_String outDV = UA_STRING_NULL;
-    UA_print(value, &UA_TYPES[UA_TYPES_DATAVALUE], &outDV);
-    UA_String outDVJson = UA_STRING_NULL;
-    UA_print(&newJsonValue, &UA_TYPES[UA_TYPES_DATAVALUE], &outDVJson);
 
     UA_DateTime keyTimestamp = 0;
     if(value->hasSourceTimestamp) {
@@ -99,14 +139,18 @@ serverSetHistoryData_backend_sqlite_Circular(UA_Server *server, void *context,
     char *nodeIdCStr = uaStringToCString(&nodeIdAsJson);
     char *valueAsCStr = uaStringToCString(&valueAsJson);  // TODO: NEEDS ESCAPING !
 
-    char *sqlFmt = "INSERT INTO HISTORY (TIMESTAMP, SESSIONID, NODEID, DATAVALUE) "
-                   "VALUES('%lld','%s', '%s', '%s');";
+    const char *sqlFmt = "INSERT INTO HISTORY (TIMESTAMP, SESSIONID, NODEID, DATAVALUE ) "
+                         "VALUES('%lld','%s', '%s', '%s');";
     size_t len = (strlen(sqlFmt) * 2) + 1;
     len += sessionIdAsJson.length + nodeIdAsJson.length + valueAsJson.length;
 
     char *sqlCmd = (char *)UA_malloc(len);
     if(sqlCmd) {
-        snprintf(sqlCmd, len, sqlFmt, keyTimestamp, CheckNull(sessionIdCStr), CheckNull(nodeIdCStr), CheckNull(valueAsCStr));
+        snprintf(sqlCmd, len, sqlFmt, 
+            keyTimestamp, 
+            CheckNull(sessionIdCStr),
+            CheckNull(nodeIdCStr),
+            CheckNull(valueAsCStr));
 
         char *zErrMsg = 0;
         int sqlRes = sqlite3_exec(ctx->sqldb, sqlCmd, 0, 0, &zErrMsg);
@@ -120,6 +164,27 @@ serverSetHistoryData_backend_sqlite_Circular(UA_Server *server, void *context,
     UA_free(sessionIdCStr);
     UA_free(nodeIdCStr);
     UA_free(valueAsCStr);
+    UA_ByteString_clear(&sessionIdAsJson);
+    UA_ByteString_clear(&nodeIdAsJson);
+    UA_ByteString_clear(&valueAsJson);
+
+    return UA_STATUSCODE_GOOD;
+}
+
+static UA_StatusCode
+serverSetHistoryData_backend_sqlite_Circular(UA_Server *server, void *context, 
+                                             const UA_NodeId *sessionId, void *sessionContext,
+                                             const UA_NodeId *nodeId, UA_Boolean historizing,
+                                             const UA_DataValue *value)
+{
+
+    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
+    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
+
+    if(historizing) {
+        sqliteBackend_db_storeHistoryEntry(ctx, sessionId, nodeId, value);
+        sqliteBackend_db_prune_if_needed(ctx);
+    }
 
     return parent->serverSetHistoryData(server, parent->context, sessionId,
                                         sessionContext, nodeId, historizing, value);
@@ -295,7 +360,7 @@ sqliteBackend_db_initalize(UA_SqliteStoreContext *context, const char *dbFilePat
         char *sql = "CREATE TABLE IF NOT EXISTS HISTORY ("
                     "    TIMESTAMP INT PRIMARY KEY NOT NULL,"
                     "    SESSIONID TEXT,"
-                    "    NODEID TEXT, "
+                    "    NODEID    TEXT, "
                     "    DATAVALUE TEXT);";
         sqlRet = sqlite3_exec(context->sqldb, sql, NULL, NULL, &zErrMsg);
     }
@@ -339,8 +404,7 @@ restoreHistoryEntry(UA_SqliteStoreContext *context,
 }
 
 static int
-db_restore_callback(void *context, int argc, char **argv, char **azColName)
-{
+callback_db_restore_entry(void *context, int argc, char **argv, char **azColName) {
     int i;
     char *nodeId = NULL;
     char *sessionId = NULL;
@@ -369,50 +433,76 @@ static void
 sqliteBackend_db_restore(UA_SqliteStoreContext *context)
 {
     char *sql = "SELECT TIMESTAMP, SESSIONID, NODEID, DATAVALUE FROM HISTORY";
-    sqlite3_exec(context->sqldb, sql, db_restore_callback, context, NULL);
+    sqlite3_exec(context->sqldb, sql, callback_db_restore_entry, context, NULL);
+}
+
+static UA_SqliteStoreContext*
+sqliteBackend_createDefaultStoreContext(UA_HistoryDataBackend parent)
+{
+    UA_SqliteStoreContext *ctx =
+        (UA_SqliteStoreContext *)UA_calloc(1, sizeof(UA_SqliteStoreContext));
+    if(!ctx)
+        return ctx;
+
+    memset(ctx, 0, sizeof(UA_SqliteStoreContext));
+    ctx->parent = parent;
+    ctx->pruneInterval = 0;
+    ctx->pruneCounter = 0;
+    ctx->maxValuesPerNode = 0;
+    return ctx;
 }
 
 UA_HistoryDataBackend
 UA_HistoryDataBackend_SQLite(UA_HistoryDataBackend parent, const char* dbFilePath) 
 {
-    UA_HistoryDataBackend result;
-    memset(&result, 0, sizeof(UA_HistoryDataBackend));
-    UA_SqliteStoreContext *ctx =
-        (UA_SqliteStoreContext *)UA_calloc(1, sizeof(UA_SqliteStoreContext));
+    UA_HistoryDataBackend newBackend;
+    memset(&newBackend, 0, sizeof(UA_HistoryDataBackend));
+
+    UA_SqliteStoreContext *ctx = sqliteBackend_createDefaultStoreContext(parent);
     if (!ctx)
-        return result;
+        return newBackend;
+
+    newBackend.serverSetHistoryData = &serverSetHistoryData_backend_sqlite;
+    newBackend.resultSize = &resultSize_backend_sqlite;
+    newBackend.getEnd = &getEnd_backend_sqlite;
+    newBackend.lastIndex = &lastIndex_backend_sqlite;
+    newBackend.firstIndex = &firstIndex_backend_sqlite;
+    newBackend.getDateTimeMatch = &getDateTimeMatch_backend_sqlite;
+    newBackend.copyDataValues = &copyDataValues_backend_sqlite;
+    newBackend.getDataValue = &getDataValue_backend_sqlite;
+    newBackend.boundSupported = &boundSupported_backend_sqlite;
+    newBackend.timestampsToReturnSupported = &timestampsToReturnSupported_backend_sqlite;
+    newBackend.insertDataValue = &insertDataValue_backend_sqlite;
+    newBackend.updateDataValue = &updateDataValue_backend_sqlite;
+    newBackend.replaceDataValue = &replaceDataValue_backend_sqlite;
+    newBackend.removeDataValue = &removeDataValue_backend_sqlite;
+    newBackend.deleteMembers = &deleteMembers_backend_sqlite;
+    newBackend.getHistoryData = NULL;
 
     sqliteBackend_db_initalize(ctx, dbFilePath);
-
-    ctx->parent = parent;
-    result.serverSetHistoryData = &serverSetHistoryData_backend_sqlite;
-    result.resultSize = &resultSize_backend_sqlite;
-    result.getEnd = &getEnd_backend_sqlite;
-    result.lastIndex = &lastIndex_backend_sqlite;
-    result.firstIndex = &firstIndex_backend_sqlite;
-    result.getDateTimeMatch = &getDateTimeMatch_backend_sqlite;
-    result.copyDataValues = &copyDataValues_backend_sqlite;
-    result.getDataValue = &getDataValue_backend_sqlite;
-    result.boundSupported = &boundSupported_backend_sqlite;
-    result.timestampsToReturnSupported = &timestampsToReturnSupported_backend_sqlite;
-    result.insertDataValue = &insertDataValue_backend_sqlite;
-    result.updateDataValue = &updateDataValue_backend_sqlite;
-    result.replaceDataValue = &replaceDataValue_backend_sqlite;
-    result.removeDataValue = &removeDataValue_backend_sqlite;
-    result.deleteMembers = &deleteMembers_backend_sqlite;
-    result.getHistoryData = NULL;
-    result.context = ctx;
-
     sqliteBackend_db_restore(ctx);
+    newBackend.context = ctx;
 
-    return result;
+    return newBackend;
 }
 
 UA_HistoryDataBackend
-UA_HistoryDataBackend_SQLite_Circular(UA_HistoryDataBackend parent, const char *dbFilePath)
+UA_HistoryDataBackend_SQLite_Circular(UA_HistoryDataBackend parent,
+                                      const char *dbFilePath,
+                                      size_t pruneInterval,
+                                      size_t maxValuesPerNode)
 {
-    UA_HistoryDataBackend result = UA_HistoryDataBackend_SQLite(parent, dbFilePath);
-    result.serverSetHistoryData = &serverSetHistoryData_backend_sqlite_Circular;
-    result.getHistoryData = &getHistoryData_service_sqlite_Circular;
-    return result;
+    UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(parent, dbFilePath);
+    newBackend.serverSetHistoryData = &serverSetHistoryData_backend_sqlite_Circular;
+    newBackend.getHistoryData = &getHistoryData_service_sqlite_Circular;
+
+    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)newBackend.context;
+    if(ctx) {
+        ctx->maxValuesPerNode = maxValuesPerNode;
+        ctx->pruneInterval = pruneInterval;
+        ctx->pruneCounter = 0;
+        sqliteBackend_db_prune_circular(ctx);
+    }
+
+    return newBackend;
 }
