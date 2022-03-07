@@ -528,6 +528,7 @@ restoreHistoryEntry(
     UA_NodeId sessionId = UA_NODEID_NULL;
     UA_NodeId nodeId = UA_NODEID_NULL;
     UA_DataValue dataValue;
+    UA_DataValue_init(&dataValue);
 
     UA_StatusCode scSid = UA_decodeJson(&uaSessionIdAsJson, &sessionId, &UA_TYPES[UA_TYPES_NODEID], NULL);
     UA_StatusCode scNid = UA_decodeJson(&uaNodeIdAsJson, &nodeId, &UA_TYPES[UA_TYPES_NODEID], NULL);
