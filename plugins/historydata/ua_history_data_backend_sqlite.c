@@ -505,8 +505,11 @@ sqliteBackend_db_initalize(UA_SqliteStoreContext *context, const char *dbFilePat
 }
 
 static void
-restoreHistoryEntry(UA_SqliteStoreContext *context, 
-    const char *sessionIdAsJson, const char *nodeIdAsJson, const char *valueAsJson)
+restoreHistoryEntry(
+    UA_SqliteStoreContext *context,
+    const char *sessionIdAsJson,
+    const char *nodeIdAsJson,
+    const char *valueAsJson)
 {
     UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
 
@@ -522,17 +525,23 @@ restoreHistoryEntry(UA_SqliteStoreContext *context,
     uaValueAsJson.length = strlen(valueAsJson);
     uaValueAsJson.data = (UA_Byte *)valueAsJson;
 
-    /* Decode the nodeId */
     UA_NodeId sessionId = UA_NODEID_NULL;
     UA_NodeId nodeId = UA_NODEID_NULL;
     UA_DataValue dataValue;
 
-    UA_decodeJson(&uaSessionIdAsJson, &sessionId, &UA_TYPES[UA_TYPES_NODEID], NULL);
-    UA_decodeJson(&uaNodeIdAsJson, &nodeId, &UA_TYPES[UA_TYPES_NODEID], NULL);
-    UA_decodeJson(&uaValueAsJson, &dataValue, &UA_TYPES[UA_TYPES_DATAVALUE], NULL);
+    UA_StatusCode scSid = UA_decodeJson(&uaSessionIdAsJson, &sessionId, &UA_TYPES[UA_TYPES_NODEID], NULL);
+    UA_StatusCode scNid = UA_decodeJson(&uaNodeIdAsJson, &nodeId, &UA_TYPES[UA_TYPES_NODEID], NULL);
+    UA_StatusCode scDV =  UA_decodeJson(&uaValueAsJson, &dataValue, &UA_TYPES[UA_TYPES_DATAVALUE], NULL);
 
-    parent->serverSetHistoryData(NULL, parent->context, &sessionId, NULL, &nodeId, true,
-                                 &dataValue);
+    if(UA_StatusCode_isGood(scSid) && 
+       UA_StatusCode_isGood(scNid) &&
+       UA_StatusCode_isGood(scDV)) {
+        parent->serverSetHistoryData(NULL, parent->context, &sessionId, NULL, &nodeId, true, &dataValue);
+    }
+
+    UA_NodeId_clear(&sessionId);
+    UA_NodeId_clear(&nodeId);
+    UA_DataValue_clear(&dataValue);
 }
 
 static int
