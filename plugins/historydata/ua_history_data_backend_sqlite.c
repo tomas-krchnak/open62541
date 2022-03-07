@@ -14,6 +14,7 @@ static const char *maxUUL = "18446744073709551615";
 typedef struct {
     UA_HistoryDataBackend parent;
     sqlite3 *sqldb;
+    long dbSchemeVersion;
     size_t pruneInterval;
     size_t pruneCounter;
     size_t maxValuesPerNode;
@@ -481,26 +482,68 @@ getHistoryData_service_sqlite_Circular(
                                   continuationPoint, outContinuationPoint, historyData);
 }
 
+static int
+callback_db_dbversion(void *context, int argc, char **argv, char **azColName) {
+    UA_SqliteStoreContext *dbContext = (UA_SqliteStoreContext *)context;
+    int *pCurrentVersion = (int *)context;
+    static char VERSION_LABEL[] = "VERSION";
+
+    dbContext->dbSchemeVersion = -1;
+    for(int i = 0; i < argc; i++) {
+        if(0 == strncmp(*azColName, VERSION_LABEL, strlen(VERSION_LABEL))) {
+            const int BASE10 = 10;
+            char *endPtr = NULL;
+            long versionFound = strtol(argv[i], &endPtr, BASE10);
+            if(endPtr > argv[0]) {
+                dbContext->dbSchemeVersion = versionFound;
+            }
+        }
+    }
+    return SQLITE_OK;
+}
+
 static void
-sqliteBackend_db_initalize(UA_SqliteStoreContext *context, const char *dbFilePath) {
+sqliteBackend_db_createDbScheme_version_1(UA_SqliteStoreContext *context) {
+    char *zErrMsg = 0;
+    char *sql = "CREATE TABLE IF NOT EXISTS HISTORY ("
+                "    TIMESTAMP INT PRIMARY KEY NOT NULL,"
+                "    SESSIONID TEXT,"
+                "    NODEID    TEXT, "
+                "    DATAVALUE TEXT);"
+                "CREATE TABLE IF NOT EXISTS DBVERSION (VERSION INT NOT NULL);";
+    int sqlRet = sqlite3_exec(context->sqldb, sql, NULL, NULL, &zErrMsg);
+    
+    if(sqlRet != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+        zErrMsg = 0;
+    }
+}
+
+static void
+sqliteBackend_db_upgradeScheme_0_to_1(UA_SqliteStoreContext *context) {
+    sqliteBackend_db_createDbScheme_version_1(context);
+    char *sqlCmd = "INSERT OR REPLACE INTO DBVERSION (VERSION) VALUES(1)";
+    int sqlRet = sqlite3_exec(context->sqldb, sqlCmd, NULL, NULL, NULL);
+}
+
+static void
+sqliteBackend_db_upgrade(UA_SqliteStoreContext *context) {
+    char *sqlCmd = "SELECT VERSION FROM DBVERSION ORDER BY VERSION DESC LIMIT 1";
+    int sqlRet =
+        sqlite3_exec(context->sqldb, sqlCmd, callback_db_dbversion, context, NULL);
+    if(context->dbSchemeVersion <= 0) {
+        sqliteBackend_db_upgradeScheme_0_to_1(context);
+    }
+}
+
+static void
+sqliteBackend_db_open(UA_SqliteStoreContext *context, const char *dbFilePath) {
     char *zErrMsg = 0;
     int sqlRet = sqlite3_open(dbFilePath, &context->sqldb);
 
     if(sqlRet) {
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(context->sqldb));
-    } else {
-        char *sql = "CREATE TABLE IF NOT EXISTS HISTORY ("
-                    "    TIMESTAMP INT PRIMARY KEY NOT NULL,"
-                    "    SESSIONID TEXT,"
-                    "    NODEID    TEXT, "
-                    "    DATAVALUE TEXT);";
-        sqlRet = sqlite3_exec(context->sqldb, sql, NULL, NULL, &zErrMsg);
-    }
-
-    if(sqlRet != SQLITE_OK) {
-        fprintf(stderr, "SQL error: %s\n", zErrMsg);
-        sqlite3_free(zErrMsg);
-        zErrMsg = 0;
     }
 }
 
@@ -624,7 +667,8 @@ UA_HistoryDataBackend_SQLite(UA_HistoryDataBackend parent, const char* dbFilePat
     newBackend.deleteMembers = &deleteMembers_backend_sqlite;
     newBackend.getHistoryData = NULL;
 
-    sqliteBackend_db_initalize(ctx, dbFilePath);
+    sqliteBackend_db_open(ctx, dbFilePath);
+    sqliteBackend_db_upgrade(ctx);
     sqliteBackend_db_restore(ctx);
     newBackend.context = ctx;
 
