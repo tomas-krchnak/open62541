@@ -504,6 +504,24 @@ sqliteBackend_db_initalize(UA_SqliteStoreContext *context, const char *dbFilePat
     }
 }
 
+static UA_Boolean
+JsonDecode_NodeId(const char* json, UA_NodeId* nodeId) {
+    UA_ByteString uaJson;
+    uaJson.length = strlen(json);
+    uaJson.data = (UA_Byte *)json;
+    return UA_StatusCode_isGood(
+        UA_decodeJson(&uaJson, nodeId, &UA_TYPES[UA_TYPES_NODEID], NULL));
+}
+
+static UA_Boolean
+JsonDecode_DataValue(const char *json, UA_DataValue *dataValue) {
+    UA_ByteString uaJson;
+    uaJson.length = strlen(json);
+    uaJson.data = (UA_Byte *)json;
+    return UA_StatusCode_isGood(
+        UA_decodeJson(&uaJson, dataValue, &UA_TYPES[UA_TYPES_DATAVALUE], NULL));
+}
+
 static void
 restoreHistoryEntry(
     UA_SqliteStoreContext *context,
@@ -511,32 +529,17 @@ restoreHistoryEntry(
     const char *nodeIdAsJson,
     const char *valueAsJson)
 {
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
-
-    UA_ByteString uaSessionIdAsJson;
-    uaSessionIdAsJson.length = strlen(sessionIdAsJson);
-    uaSessionIdAsJson.data = (UA_Byte *)sessionIdAsJson;
-
-    UA_ByteString uaNodeIdAsJson;
-    uaNodeIdAsJson.length = strlen(nodeIdAsJson);
-    uaNodeIdAsJson.data = (UA_Byte *)nodeIdAsJson;
-
-    UA_ByteString uaValueAsJson;
-    uaValueAsJson.length = strlen(valueAsJson);
-    uaValueAsJson.data = (UA_Byte *)valueAsJson;
-
     UA_NodeId sessionId = UA_NODEID_NULL;
     UA_NodeId nodeId = UA_NODEID_NULL;
     UA_DataValue dataValue;
     UA_DataValue_init(&dataValue);
 
-    UA_StatusCode scSid = UA_decodeJson(&uaSessionIdAsJson, &sessionId, &UA_TYPES[UA_TYPES_NODEID], NULL);
-    UA_StatusCode scNid = UA_decodeJson(&uaNodeIdAsJson, &nodeId, &UA_TYPES[UA_TYPES_NODEID], NULL);
-    UA_StatusCode scDV =  UA_decodeJson(&uaValueAsJson, &dataValue, &UA_TYPES[UA_TYPES_DATAVALUE], NULL);
+    const bool sidOk = JsonDecode_NodeId(sessionIdAsJson, &sessionId);
+    const bool nidOk = JsonDecode_NodeId(nodeIdAsJson, &nodeId);
+    const bool dvOk = JsonDecode_DataValue(valueAsJson, &dataValue);
 
-    if(UA_StatusCode_isGood(scSid) && 
-       UA_StatusCode_isGood(scNid) &&
-       UA_StatusCode_isGood(scDV)) {
+    if(sidOk && nidOk && dvOk) {
+        UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
         parent->serverSetHistoryData(NULL, parent->context, &sessionId, NULL, &nodeId, true, &dataValue);
     }
 
