@@ -132,7 +132,7 @@ sqliteBackend_db_prune_if_needed(UA_SqliteStoreContext *ctx)
 }
 
 static CharBuffer
-uaNodeIdAsJsonCStr(const UA_NodeId *nodeId)
+AllocUaNodeIdAsJsonCStr(const UA_NodeId *nodeId)
 {
     UA_ByteString nodeIdAsJson = UA_BYTESTRING_NULL;
 
@@ -144,7 +144,7 @@ uaNodeIdAsJsonCStr(const UA_NodeId *nodeId)
 }
 
 static CharBuffer
-uaDataValueAsJsonCStr(const UA_DataValue *value)
+AllocUaDataValueAsJsonCStr(const UA_DataValue *value)
 {
     UA_ByteString valueAsJson = UA_BYTESTRING_NULL;
 
@@ -178,9 +178,9 @@ sqliteBackend_db_storeHistoryEntry(UA_SqliteStoreContext *ctx,
         keyTimestamp = UA_DateTime_now();
     }
 
-    CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-    CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
-    CharBuffer valueAsCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
+    CharBuffer sessionIdCStr = AllocUaNodeIdAsJsonCStr(sessionId);
+    CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
+    CharBuffer valueAsCStr = AllocUaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
 
     FixedCharBuffer sqlFmt =
         "INSERT INTO HISTORY (TIMESTAMP, SESSIONID, NODEID, DATAVALUE ) "
@@ -336,9 +336,9 @@ insertDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
                                                 nodeId, value);
 
     if(UA_StatusCode_isGood(res)) {
-        CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-        CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
-        CharBuffer valueCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
+        CharBuffer sessionIdCStr = AllocUaNodeIdAsJsonCStr(sessionId);
+        CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
+        CharBuffer valueCStr = AllocUaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
 
         if(sessionIdCStr && nodeIdCStr && valueCStr) {
             FixedCharBuffer sqlFmt =
@@ -377,9 +377,9 @@ updateDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
     UA_StatusCode res = parent->updateDataValue(server, parent->context, sessionId, sessionContext,
                                             nodeId, value);
     if(UA_StatusCode_isGood(res)) {
-        CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-        CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
-        CharBuffer valueCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
+        CharBuffer sessionIdCStr = AllocUaNodeIdAsJsonCStr(sessionId);
+        CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
+        CharBuffer valueCStr = AllocUaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
 
         if(sessionIdCStr && nodeIdCStr && valueCStr) {
             FixedCharBuffer sqlFmt =
@@ -417,9 +417,9 @@ replaceDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
     UA_StatusCode res = parent->replaceDataValue(server, parent->context, sessionId,
                                                  sessionContext, nodeId, value);
     if(UA_StatusCode_isGood(res)) {
-        CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-        CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
-        CharBuffer valueCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
+        CharBuffer sessionIdCStr = AllocUaNodeIdAsJsonCStr(sessionId);
+        CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
+        CharBuffer valueCStr = AllocUaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
 
         if(sessionIdCStr && nodeIdCStr && valueCStr) {
             FixedCharBuffer sqlFmt =
@@ -458,8 +458,8 @@ removeDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
                                 sessionContext, nodeId, startTimestamp, endTimestamp);
 
     if(UA_StatusCode_isGood(res)) {
-        CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-        CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
+        CharBuffer sessionIdCStr = AllocUaNodeIdAsJsonCStr(sessionId);
+        CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
 
         if(sessionIdCStr && nodeIdCStr) {
             FixedCharBuffer sqlFmt =
