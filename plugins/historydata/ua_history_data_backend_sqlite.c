@@ -12,7 +12,7 @@ typedef char*              CharBuffer;
 typedef const char *       ConstCharBuffer;
 typedef const char * const FixedCharBuffer;
 
-static FixedCharBuffer maxUUL = "18446744073709551615";
+static FixedCharBuffer maxUUL = "18446744073709551615"; /* For length calculations */
 
 typedef struct {
     UA_HistoryDataBackend parent;
@@ -53,7 +53,7 @@ serverSetHistoryData_backend_sqlite(UA_Server *server, void *context, const UA_N
 }
 
 static CharBuffer
-uaStringToCString(const UA_ByteString *uaString)
+AllocUaStringAsCString(const UA_ByteString *uaString)
 {
     CharBuffer cString = AllocCharBuffer(uaString->length + 1);
     if(cString) {
@@ -137,7 +137,7 @@ AllocUaNodeIdAsJsonCStr(const UA_NodeId *nodeId)
     UA_ByteString nodeIdAsJson = UA_BYTESTRING_NULL;
 
     UA_encodeJson(nodeId, &UA_TYPES[UA_TYPES_NODEID], &nodeIdAsJson, NULL);
-    CharBuffer nodeIdAsJsonString = uaStringToCString(&nodeIdAsJson);
+    CharBuffer nodeIdAsJsonString = AllocUaStringAsCString(&nodeIdAsJson);
     UA_ByteString_clear(&nodeIdAsJson);
 
     return nodeIdAsJsonString;
@@ -149,7 +149,7 @@ AllocUaDataValueAsJsonCStr(const UA_DataValue *value)
     UA_ByteString valueAsJson = UA_BYTESTRING_NULL;
 
     UA_encodeJson(value, &UA_TYPES[UA_TYPES_DATAVALUE], &valueAsJson, NULL);
-    CharBuffer valueAsJsonString = uaStringToCString(&valueAsJson);
+    CharBuffer valueAsJsonString = AllocUaStringAsCString(&valueAsJson);
     UA_ByteString_clear(&valueAsJson);
 
     return valueAsJsonString;
