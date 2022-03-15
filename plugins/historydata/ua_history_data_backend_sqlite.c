@@ -8,8 +8,11 @@
 #include <open62541/plugin/historydata/history_data_backend_sqlite.h>
 #include <open62541/plugin/historydata/sqlite/sqlite3.h>
 
+typedef char*              CharBuffer;
+typedef const char *       ConstCharBuffer;
+typedef const char * const FixedCharBuffer;
 
-static const char *maxUUL = "18446744073709551615";
+static FixedCharBuffer maxUUL = "18446744073709551615";
 
 typedef struct {
     UA_HistoryDataBackend parent;
@@ -27,6 +30,19 @@ UA_SqliteStoreContext_clear(UA_SqliteStoreContext *ctx) {
     memset(ctx, 0, sizeof(UA_SqliteStoreContext));
 }
 
+static CharBuffer
+AllocCharBuffer(size_t len)
+{
+    return (CharBuffer)UA_malloc(len);
+}
+
+void
+DeleteCharBuffer(CharBuffer* buffer)
+{
+    if (*buffer) UA_free(*buffer);
+    *buffer = NULL;
+}
+
 static UA_StatusCode
 serverSetHistoryData_backend_sqlite(UA_Server *server, void *context, const UA_NodeId *sessionId,
                                         void *sessionContext, const UA_NodeId *nodeId,
@@ -36,19 +52,19 @@ serverSetHistoryData_backend_sqlite(UA_Server *server, void *context, const UA_N
     return parent->serverSetHistoryData(server, parent->context, sessionId, sessionContext, nodeId, historizing, value);
 }
 
-static char *
+static CharBuffer
 uaStringToCString(const UA_ByteString *uaString)
 {
-    char *cString = (char *)UA_malloc(uaString->length + 1);
+    CharBuffer cString = AllocCharBuffer(uaString->length + 1);
     if(cString) {
         strncpy(cString, (char *)uaString->data, uaString->length);
         cString[uaString->length] = '\0';
     }
     return cString;
 }
-static const char*
-CheckNull(const char *cString)
-{
+
+static FixedCharBuffer
+CheckNull(FixedCharBuffer cString) {
     if(cString)
         return cString;
     else
@@ -76,7 +92,7 @@ sqliteBackend_db_prune_circular(UA_SqliteStoreContext *ctx)
 
     ctx->pruneCounter = 0;
 
-    const char *sqlFmt =
+    FixedCharBuffer sqlFmt =
         "DELETE FROM HISTORY"
         " WHERE EXISTS ("
         "   SELECT * "
@@ -91,11 +107,11 @@ sqliteBackend_db_prune_circular(UA_SqliteStoreContext *ctx)
         ")";
     size_t len = strlen(sqlFmt) * 2;
 
-    char *sqlCmd = (char *)UA_malloc(len);
+    CharBuffer sqlCmd = AllocCharBuffer(len);
     if(sqlCmd) {
         snprintf(sqlCmd, len, sqlFmt, ctx->maxValuesPerNode);
         int sqlRet = sqlite3_exec(ctx->sqldb, sqlCmd, NULL, NULL, NULL);
-        UA_free(sqlCmd);
+        DeleteCharBuffer(&sqlCmd);
     }
 }
 
@@ -115,25 +131,25 @@ sqliteBackend_db_prune_if_needed(UA_SqliteStoreContext *ctx)
         sqliteBackend_db_prune_circular(ctx);
 }
 
-static char *
+static CharBuffer
 uaNodeIdAsJsonCStr(const UA_NodeId *nodeId)
 {
     UA_ByteString nodeIdAsJson = UA_BYTESTRING_NULL;
 
     UA_encodeJson(nodeId, &UA_TYPES[UA_TYPES_NODEID], &nodeIdAsJson, NULL);
-    char *nodeIdAsJsonString = uaStringToCString(&nodeIdAsJson);
+    CharBuffer nodeIdAsJsonString = uaStringToCString(&nodeIdAsJson);
     UA_ByteString_clear(&nodeIdAsJson);
 
     return nodeIdAsJsonString;
 }
 
-static char *
+static CharBuffer
 uaDataValueAsJsonCStr(const UA_DataValue *value)
 {
     UA_ByteString valueAsJson = UA_BYTESTRING_NULL;
 
     UA_encodeJson(value, &UA_TYPES[UA_TYPES_DATAVALUE], &valueAsJson, NULL);
-    char *valueAsJsonString = uaStringToCString(&valueAsJson);
+    CharBuffer valueAsJsonString = uaStringToCString(&valueAsJson);
     UA_ByteString_clear(&valueAsJson);
 
     return valueAsJsonString;
@@ -162,16 +178,17 @@ sqliteBackend_db_storeHistoryEntry(UA_SqliteStoreContext *ctx,
         keyTimestamp = UA_DateTime_now();
     }
 
-    char *sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-    char *nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
-    char *valueAsCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
+    CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
+    CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
+    CharBuffer valueAsCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
 
-    const char *sqlFmt = "INSERT INTO HISTORY (TIMESTAMP, SESSIONID, NODEID, DATAVALUE ) "
-                         "VALUES('%lld','%s', '%s', '%s');";
+    FixedCharBuffer sqlFmt =
+        "INSERT INTO HISTORY (TIMESTAMP, SESSIONID, NODEID, DATAVALUE ) "
+        "VALUES('%lld','%s', '%s', '%s');";
     size_t bufferLen = strlen(sqlFmt) + strlen(maxUUL);
     bufferLen += strlen(sessionIdCStr) + strlen(nodeIdCStr) + strlen(valueAsCStr) + 1;
 
-    char *sqlCmd = (char *)UA_malloc(bufferLen);
+    CharBuffer sqlCmd = AllocCharBuffer(bufferLen);
     if(sqlCmd) {
         snprintf(sqlCmd, bufferLen, sqlFmt,
             keyTimestamp,
@@ -186,11 +203,11 @@ sqliteBackend_db_storeHistoryEntry(UA_SqliteStoreContext *ctx,
             sqlite3_free(zErrMsg);
             zErrMsg = 0;
         }
-        UA_free(sqlCmd);
+        DeleteCharBuffer(&sqlCmd);
     }
-    UA_free(sessionIdCStr);
-    UA_free(nodeIdCStr);
-    UA_free(valueAsCStr);
+    DeleteCharBuffer(&sessionIdCStr);
+    DeleteCharBuffer(&nodeIdCStr);
+    DeleteCharBuffer(&valueAsCStr);
 
     return UA_STATUSCODE_GOOD;
 }
@@ -319,25 +336,28 @@ insertDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
                                                 nodeId, value);
 
     if(UA_StatusCode_isGood(res)) {
-        char *sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-        char *nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
-        char *valueCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
+        CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
+        CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
+        CharBuffer valueCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
 
         if(sessionIdCStr && nodeIdCStr && valueCStr) {
-            char *sqlFmt = "INSERT INTO HISTORY (TIMESTAMP, SESSIONID, NODEID, DATAVALUE) "
-                           "VALUES(%lld, '%s', '%s', '%s')";
+            FixedCharBuffer sqlFmt =
+                "INSERT INTO HISTORY (TIMESTAMP, SESSIONID, NODEID, DATAVALUE) "
+                "VALUES(%lld, '%s', '%s', '%s')";
             size_t bufferLen = strlen(sqlFmt) + strlen(maxUUL) + strlen(sessionIdCStr) +
                                strlen(nodeIdCStr) + strlen(valueCStr) + 1;
-            char *sqlCmd = (char *)UA_malloc(bufferLen);
+            CharBuffer sqlCmd = AllocCharBuffer(bufferLen);
             snprintf(sqlCmd, bufferLen, sqlFmt, timestamp, 
                 CheckNull(sessionIdCStr),
                 CheckNull(nodeIdCStr), 
                 CheckNull(valueCStr));
 
             int sqlRes = sqlite3_exec(ctx->sqldb, sqlCmd, NULL, NULL, NULL);
-            UA_free(sqlCmd);
+            DeleteCharBuffer(&sqlCmd);
         }
-
+        DeleteCharBuffer(&valueCStr);
+        DeleteCharBuffer(&nodeIdCStr);
+        DeleteCharBuffer(&sessionIdCStr);
     }
     return res;
 }
@@ -357,24 +377,27 @@ updateDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
     UA_StatusCode res = parent->updateDataValue(server, parent->context, sessionId, sessionContext,
                                             nodeId, value);
     if(UA_StatusCode_isGood(res)) {
-        char *sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-        char *nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
-        char *valueCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
+        CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
+        CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
+        CharBuffer valueCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
 
         if(sessionIdCStr && nodeIdCStr && valueCStr) {
-            char *sqlFmt =
+            FixedCharBuffer sqlFmt =
                 "UPDATE HISTORY "
                 "   SET SESSIONID = '%', NODEID = '%s', DATAVALUE = '%s' "
                 " WHERE TIMESTAMP = %lld";
             size_t bufferLen = strlen(sqlFmt) + strlen(maxUUL) + strlen(sessionIdCStr) +
                                strlen(nodeIdCStr) + strlen(valueCStr) + 1;
-            char *sqlCmd = (char *)UA_malloc(bufferLen);
+            CharBuffer sqlCmd = AllocCharBuffer(bufferLen);
             snprintf(sqlCmd, bufferLen, sqlFmt, timestamp, sessionIdCStr, nodeIdCStr,
                      valueCStr);
 
             int sqlRes = sqlite3_exec(ctx->sqldb, sqlCmd, NULL, NULL, NULL);
-            UA_free(sqlCmd);
+            DeleteCharBuffer(&sqlCmd);
         }
+        DeleteCharBuffer(&valueCStr);
+        DeleteCharBuffer(&nodeIdCStr);
+        DeleteCharBuffer(&sessionIdCStr);
     }
     return res;
 }
@@ -394,23 +417,27 @@ replaceDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
     UA_StatusCode res = parent->replaceDataValue(server, parent->context, sessionId,
                                                  sessionContext, nodeId, value);
     if(UA_StatusCode_isGood(res)) {
-        char *sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-        char *nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
-        char *valueCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
+        CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
+        CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
+        CharBuffer valueCStr = uaDataValueAsJsonCStr(value);  // TODO: NEEDS ESCAPING !
 
         if(sessionIdCStr && nodeIdCStr && valueCStr) {
-            char *sqlFmt = "INSERT OR REPLACE"
-                           "  INTO HISTORY (TIMESTAMP, SESSIONID, NODEID, DATAVALUE) "
-                           "  VALUES(%lld, '%s', '%s', '%s')";
+            FixedCharBuffer sqlFmt =
+                "INSERT OR REPLACE"
+                "  INTO HISTORY (TIMESTAMP, SESSIONID, NODEID, DATAVALUE) "
+                "  VALUES(%lld, '%s', '%s', '%s')";
             size_t bufferLen = strlen(sqlFmt) + strlen(maxUUL) + strlen(sessionIdCStr) +
                                strlen(nodeIdCStr) + strlen(valueCStr) + 1;
-            char *sqlCmd = (char *)UA_malloc(bufferLen);
+            CharBuffer sqlCmd = AllocCharBuffer(bufferLen);
             snprintf(sqlCmd, bufferLen, sqlFmt, timestamp, sessionIdCStr, nodeIdCStr,
                      valueCStr);
 
             int sqlRes = sqlite3_exec(ctx->sqldb, sqlCmd, NULL, NULL, NULL);
-            UA_free(sqlCmd);
+            DeleteCharBuffer(&sqlCmd);
         }
+        DeleteCharBuffer(&valueCStr);
+        DeleteCharBuffer(&nodeIdCStr);
+        DeleteCharBuffer(&sessionIdCStr);
     }
     return res;
 }
@@ -431,23 +458,27 @@ removeDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
                                 sessionContext, nodeId, startTimestamp, endTimestamp);
 
     if(UA_StatusCode_isGood(res)) {
-        char *sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
-        char *nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
+        CharBuffer sessionIdCStr = uaNodeIdAsJsonCStr(sessionId);
+        CharBuffer nodeIdCStr = uaNodeIdAsJsonCStr(nodeId);
 
         if(sessionIdCStr && nodeIdCStr) {
-            char *sqlFmt = "DELETE FROM HISTORY "
-                           " WHERE TIMESTAMP >= %lld "
-                           "   AND TIMESTAMP <= %lld "
-                           "   AND SESSIONID = '%s'"
-                           "   AND NODEID = '%s'";
+            FixedCharBuffer sqlFmt =
+                "DELETE FROM HISTORY "
+                " WHERE TIMESTAMP >= %lld "
+                "   AND TIMESTAMP <= %lld "
+                "   AND SESSIONID = '%s'"
+                "   AND NODEID = '%s'";
             size_t bufferLen = strlen(sqlFmt) + strlen(maxUUL) + strlen(sessionIdCStr) +
                                strlen(nodeIdCStr) + 1;
-            char *sqlCmd = (char *)UA_malloc(bufferLen);
+            CharBuffer sqlCmd = AllocCharBuffer(bufferLen);
             snprintf(sqlCmd, bufferLen, sqlFmt, startTimestamp, endTimestamp, sessionIdCStr, nodeIdCStr);
 
             int sqlRes = sqlite3_exec(ctx->sqldb, sqlCmd, NULL, NULL, NULL);
-            UA_free(sqlCmd);
+            DeleteCharBuffer(&sqlCmd);
         }
+        DeleteCharBuffer(&nodeIdCStr);
+        DeleteCharBuffer(&sessionIdCStr);
+
     }
     return res;
 }
@@ -494,7 +525,7 @@ callback_db_dbversion(void *context, int argc, char **argv, char **azColName) {
             const int BASE10 = 10;
             char *endPtr = NULL;
             long versionFound = strtol(argv[i], &endPtr, BASE10);
-            if(endPtr > argv[0]) {
+            if(endPtr > argv[i]) {
                 dbContext->dbSchemeVersion = versionFound;
             }
         }
@@ -505,13 +536,14 @@ callback_db_dbversion(void *context, int argc, char **argv, char **azColName) {
 static void
 sqliteBackend_db_createDbScheme_version_1(UA_SqliteStoreContext *context) {
     char *zErrMsg = 0;
-    char *sql = "CREATE TABLE IF NOT EXISTS HISTORY ("
-                "    TIMESTAMP INT PRIMARY KEY NOT NULL,"
-                "    SESSIONID TEXT,"
-                "    NODEID    TEXT, "
-                "    DATAVALUE TEXT);"
-                "CREATE TABLE IF NOT EXISTS DBVERSION (VERSION INT NOT NULL);";
-    int sqlRet = sqlite3_exec(context->sqldb, sql, NULL, NULL, &zErrMsg);
+    FixedCharBuffer sqlCmd = 
+        "CREATE TABLE IF NOT EXISTS HISTORY ("
+        "    TIMESTAMP INT PRIMARY KEY NOT NULL,"
+        "    SESSIONID TEXT,"
+        "    NODEID    TEXT, "
+        "    DATAVALUE TEXT);"
+        "CREATE TABLE IF NOT EXISTS DBVERSION (VERSION INT NOT NULL);";
+    int sqlRet = sqlite3_exec(context->sqldb, sqlCmd, NULL, NULL, &zErrMsg);
     
     if(sqlRet != SQLITE_OK) {
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
@@ -523,13 +555,15 @@ sqliteBackend_db_createDbScheme_version_1(UA_SqliteStoreContext *context) {
 static void
 sqliteBackend_db_upgradeScheme_0_to_1(UA_SqliteStoreContext *context) {
     sqliteBackend_db_createDbScheme_version_1(context);
-    char *sqlCmd = "INSERT OR REPLACE INTO DBVERSION (VERSION) VALUES(1)";
+    FixedCharBuffer sqlCmd =
+        "INSERT OR REPLACE INTO DBVERSION (VERSION) VALUES(1)";
     int sqlRet = sqlite3_exec(context->sqldb, sqlCmd, NULL, NULL, NULL);
 }
 
 static void
 sqliteBackend_db_upgrade(UA_SqliteStoreContext *context) {
-    char *sqlCmd = "SELECT VERSION FROM DBVERSION ORDER BY VERSION DESC LIMIT 1";
+    FixedCharBuffer sqlCmd =
+        "SELECT VERSION FROM DBVERSION ORDER BY VERSION DESC LIMIT 1";
     int sqlRet =
         sqlite3_exec(context->sqldb, sqlCmd, callback_db_dbversion, context, NULL);
     if(context->dbSchemeVersion <= 0) {
@@ -538,7 +572,7 @@ sqliteBackend_db_upgrade(UA_SqliteStoreContext *context) {
 }
 
 static void
-sqliteBackend_db_open(UA_SqliteStoreContext *context, const char *dbFilePath) {
+sqliteBackend_db_open(UA_SqliteStoreContext *context, FixedCharBuffer dbFilePath) {
     char *zErrMsg = 0;
     int sqlRet = sqlite3_open(dbFilePath, &context->sqldb);
 
@@ -548,7 +582,7 @@ sqliteBackend_db_open(UA_SqliteStoreContext *context, const char *dbFilePath) {
 }
 
 static UA_Boolean
-JsonDecode_NodeId(const char* json, UA_NodeId* nodeId) {
+JsonDecode_NodeId(FixedCharBuffer json, UA_NodeId *nodeId) {
     UA_ByteString uaJson;
     uaJson.length = strlen(json);
     uaJson.data = (UA_Byte *)json;
@@ -557,7 +591,7 @@ JsonDecode_NodeId(const char* json, UA_NodeId* nodeId) {
 }
 
 static UA_Boolean
-JsonDecode_DataValue(const char *json, UA_DataValue *dataValue) {
+JsonDecode_DataValue(FixedCharBuffer json, UA_DataValue *dataValue) {
     UA_ByteString uaJson;
     uaJson.length = strlen(json);
     uaJson.data = (UA_Byte *)json;
@@ -568,9 +602,9 @@ JsonDecode_DataValue(const char *json, UA_DataValue *dataValue) {
 static void
 restoreHistoryEntry(
     UA_SqliteStoreContext *context,
-    const char *sessionIdAsJson,
-    const char *nodeIdAsJson,
-    const char *valueAsJson)
+    FixedCharBuffer sessionIdAsJson,
+    FixedCharBuffer nodeIdAsJson,
+    FixedCharBuffer valueAsJson)
 {
     UA_NodeId sessionId = UA_NODEID_NULL;
     UA_NodeId nodeId = UA_NODEID_NULL;
@@ -594,34 +628,31 @@ restoreHistoryEntry(
 static int
 callback_db_restore_entry(void *context, int argc, char **argv, char **azColName) {
     int i;
-    char *nodeId = NULL;
-    char *sessionId = NULL;
-    char *dataValue = NULL;
+    ConstCharBuffer nodeId = NULL;
+    ConstCharBuffer sessionId = NULL;
+    ConstCharBuffer dataValue = NULL;
 
     for(i = 0; i < argc; i++) {
-        printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
-        char *col = azColName[i];
-        char *val = argv[i];
-        if(0 == strcmp(col, "SESSIONID"))
-            sessionId = val;
-        else if(0 == strcmp(col, "NODEID"))
-            nodeId = val;
-        else if(0 == strcmp(col, "DATAVALUE"))
-            dataValue = val;
+        FixedCharBuffer columnName = azColName[i];
+        FixedCharBuffer rowValue = argv[i];
+        if(0 == strcmp(columnName, "SESSIONID"))
+            sessionId = rowValue;
+        else if(0 == strcmp(columnName, "NODEID"))
+            nodeId = rowValue;
+        else if(0 == strcmp(columnName, "DATAVALUE"))
+            dataValue = rowValue;
     }
     if(sessionId && nodeId && dataValue)
         restoreHistoryEntry((UA_SqliteStoreContext *)context, sessionId, nodeId, dataValue);
-    else
-        printf("Invalid entry");
-    printf("\n");
     return SQLITE_OK;
 }
 
 static void
 sqliteBackend_db_restore(UA_SqliteStoreContext *context)
 {
-    char *sql = "SELECT TIMESTAMP, SESSIONID, NODEID, DATAVALUE FROM HISTORY";
-    sqlite3_exec(context->sqldb, sql, callback_db_restore_entry, context, NULL);
+    FixedCharBuffer sqlCmd =
+        "SELECT TIMESTAMP, SESSIONID, NODEID, DATAVALUE FROM HISTORY";
+    sqlite3_exec(context->sqldb, sqlCmd, callback_db_restore_entry, context, NULL);
 }
 
 static UA_SqliteStoreContext*
