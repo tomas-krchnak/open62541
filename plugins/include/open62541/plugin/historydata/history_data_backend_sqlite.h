@@ -30,6 +30,20 @@ UA_HistoryDataBackend_SQLite_Circular(UA_HistoryDataBackend parent,
                                       size_t pruneInterval,
                                       size_t maxValuesPerNode);
 
+/* This function construct a UA_HistoryDataBackend which implements a persistent buffer.
+ *
+ * initialNodeIdStoreSize is the maximum number of NodeIds that will be historized. This
+ * number cannot be overcomed. initialDataStoreSize is the maximum number of
+ * UA_DataValueMemoryStoreItem that will be saved in the circular buffer for a particular
+ * NodeId. Subsequent UA_DataValueMemoryStoreItem will be saved replacing the oldest ones
+ * following the logic of circular buffers.
+ */
+UA_HistoryDataBackend UA_EXPORT
+UA_HistoryDataBackend_SQLite_TimeBuffered(UA_HistoryDataBackend parent,
+                                          const char *dbFilePath,
+                                          UA_DateTime pruneRetainTimeSec,
+                                          size_t maxValuesPerNode);
+
 void UA_EXPORT
 UA_HistoryDataBackend_SQLite_clear(UA_HistoryDataBackend backend);
 
