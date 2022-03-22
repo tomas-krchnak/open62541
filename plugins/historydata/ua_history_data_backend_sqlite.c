@@ -281,15 +281,16 @@ serverSetHistoryData_backend_sqlite_MaxRetainingTime(
 static int
 callback_db_getValue(void *context, int argc, char **argv, char **azColName)
 {
-    SqliteGetValueContext *rowidCtx = (SqliteGetValueContext *)context;
-    rowidCtx->nrFound++;
+    SqliteGetValueContext *getValueCtx = (SqliteGetValueContext *)context;
+    getValueCtx->nrFound++;
     for(int i = 0; i < argc; i++) {
-        if(IsSQLColumnName(*azColName, rowidCtx->columnName)) {
+        FixedCharBuffer columnName = azColName[i];
+        if(IsSQLColumnName(columnName, getValueCtx->columnName)) {
             const int BASE10 = 10;
             char *endPtr = NULL;
-            long valueFound = strtol(argv[i], &endPtr, BASE10);
+            const long valueFound = strtol(argv[i], &endPtr, BASE10);
             if(endPtr > argv[i]) {
-                rowidCtx->value = valueFound;
+                getValueCtx->value = valueFound;
             }
         }
     }
@@ -601,7 +602,7 @@ static UA_StatusCode
 getHistoryData_service_sqlite_MaxRetainingTime(
     UA_Server *server, const UA_NodeId *sessionId, void *sessionContext,
     const UA_HistoryDataBackend *backend, const UA_DateTime start, const UA_DateTime end,
-    const UA_NodeId *nodeId, size_t maxSize, UA_UInt32 numValuesPerNode,
+    const UA_NodeId *nodeId, size_t maxSizePerResponse, UA_UInt32 numValuesPerNode,
     UA_Boolean returnBounds, UA_TimestampsToReturn timestampsToReturn,
     UA_NumericRange range, UA_Boolean releaseContinuationPoints,
     const UA_ByteString *continuationPoint, UA_ByteString *outContinuationPoint,
@@ -609,7 +610,7 @@ getHistoryData_service_sqlite_MaxRetainingTime(
 ) {
     UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)backend->context)->parent;
     return parent->getHistoryData(server, sessionId, sessionContext, parent, start, end,
-                                  nodeId, maxSize, numValuesPerNode, returnBounds,
+                                  nodeId, maxSizePerResponse, numValuesPerNode, returnBounds,
                                   timestampsToReturn, range, releaseContinuationPoints,
                                   continuationPoint, outContinuationPoint, historyData);
 }
@@ -619,10 +620,11 @@ callback_db_dbversion(void *context, int argc, char **argv, char **azColName) {
     UA_SqliteStoreContext *dbContext = (UA_SqliteStoreContext *)context;
     dbContext->dbSchemeVersion = -1;
     for(int i = 0; i < argc; i++) {
-        if(IsSQLColumnName(*azColName, COLUMN_VERSION)) {
+        FixedCharBuffer columnName = azColName[i];
+        if(IsSQLColumnName(columnName, COLUMN_VERSION)) {
             const int BASE10 = 10;
             char *endPtr = NULL;
-            long versionFound = strtol(argv[i], &endPtr, BASE10);
+            const long versionFound = strtol(argv[i], &endPtr, BASE10);
             if(endPtr > argv[i]) {
                 dbContext->dbSchemeVersion = versionFound;
             }
