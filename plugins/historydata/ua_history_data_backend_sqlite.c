@@ -40,6 +40,13 @@ typedef struct SqliteGetValueContext {
     size_t nrFound;
 } SqliteGetValueContext;
 
+typedef struct SqliteGetHistoryValuesContext {
+    size_t nrValuesFound;
+    size_t maxNrDataValues;
+    UA_TimestampsToReturn timestampsToReturn;
+    UA_DataValue *dataValues;
+} SqliteGetHistoryValuesContext;
+
 static void
 UA_SqliteStoreContext_clear(UA_SqliteStoreContext *ctx) {
     if(ctx->sqldb)
@@ -390,7 +397,51 @@ getDateTimeMatch_backend_sqlite(UA_Server *server, void *context,
                                     const UA_NodeId *nodeId, const UA_DateTime timestamp,
                                     const MatchStrategy strategy)
 {
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
+    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
+    UA_HistoryDataBackend *parent = &(ctx)->parent;
+
+    CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
+
+    FixedCharBuffer sqlFmt = 
+        "SELECT ROWID FROM HISTORY"
+        " WHERE NODEID = %Q"
+        "   AND TIMESTAMP %s %lld "
+        "   %s LIMIT 1";
+
+    ConstCharBuffer sqlOrdering = "";
+    ConstCharBuffer sqlCompare = "=";
+    switch(strategy) {
+        case MATCH_EQUAL:
+            sqlCompare = "=";
+            break;
+        case MATCH_AFTER:
+            sqlCompare = ">";
+            sqlOrdering = "ORDER BY ROWID ASC";
+            break;
+        case MATCH_BEFORE:
+            sqlCompare = "<";
+            sqlOrdering = "ORDER BY ROWID DESC";
+            break;
+        case MATCH_EQUAL_OR_AFTER:
+            sqlCompare = ">=";
+            sqlOrdering = "ORDER BY ROWID ASC";
+            break;
+        case MATCH_EQUAL_OR_BEFORE:
+            sqlCompare = "<=";
+            sqlOrdering = "ORDER BY ROWID DESC";
+            break;
+        default:
+            break;
+    }
+
+    SQLCharBuffer sqlCmd = sqlite3_mprintf(sqlFmt, nodeIdCStr, sqlCompare, timestamp, sqlOrdering);
+    SqliteGetValueContext rowidCtx = {COLUMN_ROWID, 0u, 0u};
+    if(sqlCmd) {
+        sqlite3_exec(ctx->sqldb, sqlCmd, callback_db_getValue, &rowidCtx, NULL);
+        DeleteSQLCharBuffer(&sqlCmd);
+    }
+    DeleteCharBuffer(&nodeIdCStr);
+
     return parent->getDateTimeMatch(server, parent->context, sessionId, sessionContext, nodeId, timestamp, strategy);
 }
 
@@ -606,17 +657,60 @@ static UA_StatusCode
 getHistoryData_service_sqlite_Circular(
     UA_Server *server, const UA_NodeId *sessionId, void *sessionContext,
     const UA_HistoryDataBackend *backend, const UA_DateTime start, const UA_DateTime end,
-    const UA_NodeId *nodeId, size_t maxSize, UA_UInt32 numValuesPerNode,
+    const UA_NodeId *nodeId, size_t maxSizePerResponse, UA_UInt32 numValuesPerNode,
     UA_Boolean returnBounds, UA_TimestampsToReturn timestampsToReturn,
     UA_NumericRange range, UA_Boolean releaseContinuationPoints,
     const UA_ByteString *continuationPoint, UA_ByteString *outContinuationPoint,
     UA_HistoryData *historyData
 ) {
     UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)backend->context)->parent;
-    return parent->getHistoryData(server, sessionId, sessionContext, parent, start, end, nodeId,
-                                  maxSize, numValuesPerNode, returnBounds,
-                                  timestampsToReturn, range, releaseContinuationPoints,
-                                  continuationPoint, outContinuationPoint, historyData);
+    if(parent->getHistoryData)
+        return parent->getHistoryData(server, sessionId, sessionContext, parent, start,
+                                      end, nodeId, maxSizePerResponse, numValuesPerNode,
+                                      returnBounds, timestampsToReturn, range,
+                                      releaseContinuationPoints, continuationPoint,
+                                      outContinuationPoint, historyData);
+    else
+        return UA_STATUSCODE_BADNOTIMPLEMENTED;
+}
+
+static int
+callback_db_getHistoryEntries(void *context, int argc, char **argv, char **azColName) {
+    SqliteGetHistoryValuesContext *ctx = (SqliteGetHistoryValuesContext *)context;
+    UA_DataValue* currentValue = &ctx->dataValues[ctx->nrValuesFound];
+
+    if(ctx->nrValuesFound >= ctx->maxNrDataValues)
+        return SQLITE_OK;
+
+    for(int i = 0; i < argc; i++) {
+        FixedCharBuffer columnName = azColName[i];
+        FixedCharBuffer columnValue = argv[i];
+        if(IsSQLColumnName(columnName, COLUMN_DATAVALUE)) {
+            UA_DataValue dataValue;
+            UA_DataValue_init(&dataValue);
+            const bool dvOk = JsonDecode_DataValue(columnValue, &dataValue);
+            if(dvOk) {
+                UA_TimestampsToReturn timestampMode = ctx->timestampsToReturn;
+                const bool removeSourceTimeStamp = timestampMode == UA_TIMESTAMPSTORETURN_SERVER;
+                const bool removeServerTimeStamp = timestampMode == UA_TIMESTAMPSTORETURN_SOURCE;
+                if(removeServerTimeStamp) {
+                    dataValue.hasServerTimestamp = FALSE;
+                    dataValue.hasServerPicoseconds = FALSE;
+                    dataValue.serverPicoseconds = 0u;
+                    dataValue.serverTimestamp = 0u;
+                }
+                if(removeSourceTimeStamp) {
+                    dataValue.hasSourceTimestamp = FALSE;
+                    dataValue.hasSourcePicoseconds = FALSE;
+                    dataValue.sourceTimestamp = 0u;
+                    dataValue.sourcePicoseconds = 0u;
+                }
+                *currentValue = dataValue;
+                ctx->nrValuesFound++;
+            }
+        }
+    }
+    return SQLITE_OK;
 }
 
 static UA_StatusCode
@@ -629,11 +723,121 @@ getHistoryData_service_sqlite_MaxRetainingTime(
     const UA_ByteString *continuationPoint, UA_ByteString *outContinuationPoint,
     UA_HistoryData *historyData
 ) {
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)backend->context)->parent;
-    return parent->getHistoryData(server, sessionId, sessionContext, parent, start, end,
-                                  nodeId, maxSizePerResponse, numValuesPerNode, returnBounds,
-                                  timestampsToReturn, range, releaseContinuationPoints,
-                                  continuationPoint, outContinuationPoint, historyData);
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+
+    const UA_SqliteStoreContext *ctx = (const UA_SqliteStoreContext *)(backend->context);
+    const UA_HistoryDataBackend *parent = &ctx->parent;
+
+    size_t skip = 0;
+    if(continuationPoint->length > 0) {
+        if(continuationPoint->length < sizeof(size_t))
+            return UA_STATUSCODE_BADCONTINUATIONPOINTINVALID;
+        skip = *((size_t *)(continuationPoint->data));
+    }
+
+    /*
+     * @param NU server is the server the node lives in.
+     * @param NU sessionId identify the session that wants to read historical data.
+     * @param NU sessionContext the session context.
+     * @param OK backend is the HistoryDataBackend whose storage is to be queried.
+     * @param OK start is the start time of the HistoryRead request
+     *           set to DateTime.MinValue if no specific start time is specified
+     * @param OK end is the end time of the HistoryRead request.
+     *           set to DateTime.MinValue if no specific end time is specified
+     * @param OK nodeId id of the node for which historical data is requested.
+     * @param OK maxSizePerResponse is the maximum number of items per response the server can provide.
+     *                              if more are requested, continuation points are used.
+     * @param OK numValuesPerNode   maximum number of items per response the client wants to receive.
+     * @param ?? returnBounds       determines if the client wants to receive bounding values.
+     * @param ?? timestampsToReturn contains the time stamps the client is interested in.
+     * @param ?? range              numeric range the client wants to read.
+     *           ***Continuation ***
+     * @param ?? releaseContinuationPoints determines if the continuation points
+     *           shall be released.
+     * @param OK continuationPoint is the continuation point the client wants to release
+     *           or start from.
+     * @param OK outContinuationPoint is the continuation point that gets passed to the
+     *          client by the HistoryRead service.
+     * @param OK result contains the result history data that gets passed to the client.
+     * @return UA_STATUSCODE_GOOD on success.
+     */
+
+    SqliteGetHistoryValuesContext getValuesContext;
+    getValuesContext.maxNrDataValues = maxSizePerResponse + 1;
+    getValuesContext.nrValuesFound = 0;
+    getValuesContext.timestampsToReturn = timestampsToReturn;
+    getValuesContext.dataValues = (UA_DataValue *)UA_Array_new(
+        getValuesContext.maxNrDataValues, &UA_TYPES[UA_TYPES_DATAVALUE]);
+
+    const size_t startOffset = skip;
+    const size_t maxNrEntriesToSelect =
+        (maxSizePerResponse < numValuesPerNode || numValuesPerNode == 0)
+            ? (maxSizePerResponse + 1) // Peek one ahead to check for continuation
+            : numValuesPerNode;
+    const bool startAtOldest = (end == 0 || start < end);
+    FixedCharBuffer orderBySorting = (startAtOldest ? "ASC" : "DESC");
+    const UA_DateTime oldestToGet = (startAtOldest ? start : end);
+    const UA_DateTime latestToGet = (startAtOldest ? end : start);
+
+    CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
+
+    FixedCharBuffer sqlBaseFmt    = "SELECT * FROM HISTORY WHERE NODEID = %Q";
+    FixedCharBuffer sqlStartFmt   = "   AND TIMESTAMP >%s %lld ";
+    FixedCharBuffer sqlEndFmt     = "   AND TIMESTAMP <%s %lld ";
+    FixedCharBuffer sqlOrderFmt   = " ORDER BY TIMESTAMP %s ";
+    FixedCharBuffer sqlLimitFmt   = " LIMIT %u";
+    FixedCharBuffer sqlOffsetFmt  = " OFFSET %u";
+
+    sqlite3_str* sqlCmdStr = sqlite3_str_new(ctx->sqldb);
+    sqlite3_str_appendf(sqlCmdStr, sqlBaseFmt, nodeIdCStr);
+    if(start != 0)
+        sqlite3_str_appendf(sqlCmdStr, sqlStartFmt, returnBounds ? "=" : "", oldestToGet);
+    if(end != 0)
+        sqlite3_str_appendf(sqlCmdStr, sqlEndFmt, returnBounds ? "=" : "", latestToGet);
+    sqlite3_str_appendf(sqlCmdStr, sqlOrderFmt, orderBySorting);
+    if(maxNrEntriesToSelect > 0)
+        sqlite3_str_appendf(sqlCmdStr, sqlLimitFmt, maxNrEntriesToSelect);
+    if(startOffset > 0)
+        sqlite3_str_appendf(sqlCmdStr, sqlOffsetFmt, startOffset);
+    SQLCharBuffer sqlCmd = sqlite3_str_finish(sqlCmdStr);
+
+    if(sqlCmd) {
+        sqlite3_exec(ctx->sqldb, sqlCmd, callback_db_getHistoryEntries, &getValuesContext, NULL);
+        DeleteSQLCharBuffer(&sqlCmd);
+    }
+
+    DeleteCharBuffer(&nodeIdCStr);
+
+    // Don't return the continuation peek ahead entry if needed
+    const bool continuationNeeded = getValuesContext.nrValuesFound > maxSizePerResponse;
+    const size_t nrValuesToReturn = (continuationNeeded ? maxSizePerResponse : getValuesContext.nrValuesFound);
+    if(nrValuesToReturn > 0) {
+        // There is data to return
+        historyData->dataValuesSize = nrValuesToReturn;
+        historyData->dataValues = (UA_DataValue *)UA_Array_new(nrValuesToReturn, &UA_TYPES[UA_TYPES_DATAVALUE]);
+        res = UA_Array_copy(getValuesContext.dataValues, nrValuesToReturn,
+                            (void **)&historyData->dataValues, &UA_TYPES[UA_TYPES_DATAVALUE]);
+        // TODO: timestamps to return
+
+        if (UA_StatusCode_isGood(res) && continuationNeeded) {
+            UA_ByteString newContinuationPoint;
+            UA_ByteString_init(&newContinuationPoint);
+            newContinuationPoint.length = sizeof(size_t);
+            newContinuationPoint.data = (UA_Byte*)UA_malloc(newContinuationPoint.length);
+            if(newContinuationPoint.data) {
+                *((size_t *)(newContinuationPoint.data)) = skip + maxSizePerResponse;
+                UA_ByteString_copy(&newContinuationPoint, outContinuationPoint);
+                UA_ByteString_clear(&newContinuationPoint);
+            } else {
+                res = UA_STATUSCODE_BADOUTOFMEMORY;
+            }
+        }
+    }
+
+    UA_Array_delete(getValuesContext.dataValues, getValuesContext.maxNrDataValues, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    getValuesContext.dataValues = NULL;
+
+    return res;
 }
 
 static int
