@@ -208,6 +208,24 @@ uaValueTimeStamp(const UA_DataValue* value)
     }
 }
 
+static UA_Boolean
+JsonDecode_NodeId(FixedCharBuffer json, UA_NodeId *nodeId) {
+    UA_ByteString uaJson;
+    uaJson.length = strlen(json);
+    uaJson.data = (UA_Byte *)json;
+    return UA_StatusCode_isGood(
+        UA_decodeJson(&uaJson, nodeId, &UA_TYPES[UA_TYPES_NODEID], NULL));
+}
+
+static UA_Boolean
+JsonDecode_DataValue(FixedCharBuffer json, UA_DataValue *dataValue) {
+    UA_ByteString uaJson;
+    uaJson.length = strlen(json);
+    uaJson.data = (UA_Byte *)json;
+    return UA_StatusCode_isGood(
+        UA_decodeJson(&uaJson, dataValue, &UA_TYPES[UA_TYPES_DATAVALUE], NULL));
+}
+
 static UA_StatusCode
 sqliteBackend_db_storeHistoryEntry(UA_SqliteStoreContext *ctx,
                                    const UA_NodeId *sessionId,
@@ -544,26 +562,22 @@ removeDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
                                 sessionContext, nodeId, startTimestamp, endTimestamp);
 
     if(UA_StatusCode_isGood(res)) {
-        CharBuffer sessionIdCStr = AllocUaNodeIdAsJsonCStr(sessionId);
         CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
 
-        if(sessionIdCStr && nodeIdCStr) {
+        if(nodeIdCStr) {
             FixedCharBuffer sqlFmt =
                 "DELETE FROM HISTORY "
                 " WHERE TIMESTAMP >= %lld "
                 "   AND TIMESTAMP <= %lld "
-                "   AND SESSIONID = %Q"
                 "   AND NODEID = %Q";
             SQLCharBuffer sqlCmd = 
-                sqlite3_mprintf(sqlFmt, startTimestamp, endTimestamp, sessionIdCStr, nodeIdCStr);
+                sqlite3_mprintf(sqlFmt, startTimestamp, endTimestamp, nodeIdCStr);
             if(sqlCmd) {
                 sqlite3_exec(ctx->sqldb, sqlCmd, NULL, NULL, NULL);
                 DeleteSQLCharBuffer(&sqlCmd);
             }
         }
         DeleteCharBuffer(&nodeIdCStr);
-        DeleteCharBuffer(&sessionIdCStr);
-
     }
     return res;
 }
@@ -670,24 +684,6 @@ sqliteBackend_db_open(UA_SqliteStoreContext *context, FixedCharBuffer dbFilePath
     if(sqlRet) {
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(context->sqldb));
     }
-}
-
-static UA_Boolean
-JsonDecode_NodeId(FixedCharBuffer json, UA_NodeId *nodeId) {
-    UA_ByteString uaJson;
-    uaJson.length = strlen(json);
-    uaJson.data = (UA_Byte *)json;
-    return UA_StatusCode_isGood(
-        UA_decodeJson(&uaJson, nodeId, &UA_TYPES[UA_TYPES_NODEID], NULL));
-}
-
-static UA_Boolean
-JsonDecode_DataValue(FixedCharBuffer json, UA_DataValue *dataValue) {
-    UA_ByteString uaJson;
-    uaJson.length = strlen(json);
-    uaJson.data = (UA_Byte *)json;
-    return UA_StatusCode_isGood(
-        UA_decodeJson(&uaJson, dataValue, &UA_TYPES[UA_TYPES_DATAVALUE], NULL));
 }
 
 static void
