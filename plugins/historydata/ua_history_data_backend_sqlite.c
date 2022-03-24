@@ -73,15 +73,6 @@ IsSQLColumnName(FixedCharBuffer colName, FixedCharBuffer label)
     return 0 == sqlite3_strnicmp(colName, label, (int)strlen(label));
 }
 
-static UA_StatusCode
-serverSetHistoryData_backend_sqlite(UA_Server *server, void *context, const UA_NodeId *sessionId,
-                                        void *sessionContext, const UA_NodeId *nodeId,
-                                        UA_Boolean historizing, const UA_DataValue *value)
-{
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
-    return parent->serverSetHistoryData(server, parent->context, sessionId, sessionContext, nodeId, historizing, value);
-}
-
 static CharBuffer
 AllocUaStringAsCString(const UA_ByteString *uaString)
 {
@@ -256,6 +247,22 @@ sqliteBackend_db_storeHistoryEntry(UA_SqliteStoreContext *ctx,
     DeleteCharBuffer(&valueAsCStr);
 
     return UA_STATUSCODE_GOOD;
+}
+
+static UA_StatusCode
+serverSetHistoryData_backend_sqlite_Default(UA_Server *server, void *context,
+                                            const UA_NodeId *sessionId, void *sessionContext,
+                                            const UA_NodeId *nodeId, UA_Boolean historizing,
+                                            const UA_DataValue *value) {
+    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
+    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
+
+    if(historizing) {
+        sqliteBackend_db_storeHistoryEntry(ctx, sessionId, nodeId, value);
+    }
+
+    return parent->serverSetHistoryData(server, parent->context, sessionId,
+                                        sessionContext, nodeId, historizing, value);
 }
 
 static UA_StatusCode
@@ -769,7 +776,7 @@ UA_HistoryDataBackend_SQLite(UA_HistoryDataBackend parent, const char* dbFilePat
     if (!ctx)
         return newBackend;
 
-    newBackend.serverSetHistoryData = &serverSetHistoryData_backend_sqlite;
+    newBackend.serverSetHistoryData = &serverSetHistoryData_backend_sqlite_Default;
     newBackend.resultSize = &resultSize_backend_sqlite;
     newBackend.getEnd = &getEnd_backend_sqlite;
     newBackend.lastIndex = &lastIndex_backend_sqlite;
