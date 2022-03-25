@@ -20,6 +20,7 @@ static const FixedCharBuffer COLUMN_SESSIONID = "SESSION";
 static const FixedCharBuffer COLUMN_NODEID = "NODEID";
 static const FixedCharBuffer COLUMN_DATAVALUE = "DATAVALUE";
 
+#define LOWLEVELITF_NOTIMPL (NULL)
 
 typedef struct UA_SqliteStoreContext {
     UA_HistoryDataBackend parent;
@@ -33,12 +34,6 @@ typedef struct UA_SqliteStoreContext {
     size_t pruneCheckCount;
     size_t maxValuesPerNode;
 } UA_SqliteStoreContext;
-
-typedef struct SqliteGetValueContext {
-    FixedCharBuffer columnName;
-    size_t value;
-    size_t nrFound;
-} SqliteGetValueContext;
 
 typedef struct SqliteGetHistoryValuesContext {
     size_t nrValuesFound;
@@ -308,167 +303,6 @@ serverSetHistoryData_backend_sqlite_MaxRetainingTime(
 
     return parent->serverSetHistoryData(server, parent->context, sessionId,
                                         sessionContext, nodeId, historizing, value);
-}
-
-static int
-callback_db_getValue(void *context, int argc, char **argv, char **azColName)
-{
-    SqliteGetValueContext *getValueCtx = (SqliteGetValueContext *)context;
-    getValueCtx->nrFound++;
-    for(int i = 0; i < argc; i++) {
-        FixedCharBuffer columnName = azColName[i];
-        if(IsSQLColumnName(columnName, getValueCtx->columnName)) {
-            const int BASE10 = 10;
-            char *endPtr = NULL;
-            const long valueFound = strtol(argv[i], &endPtr, BASE10);
-            if(endPtr > argv[i]) {
-                getValueCtx->value = valueFound;
-            }
-        }
-    }
-    return SQLITE_OK;
-}
-
-static size_t
-resultSize_backend_sqlite(UA_Server *server, void *context, const UA_NodeId *sessionId,
-                              void *sessionContext, const UA_NodeId *nodeId,
-                              size_t startIndex, size_t endIndex)
-{
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
-    return parent->resultSize(server, parent->context, sessionId, sessionContext, nodeId,
-                              startIndex, endIndex);
-}
-
-static size_t
-getEnd_backend_sqlite(UA_Server *server, void *context, const UA_NodeId *sessionId,
-                      void *sessionContext, const UA_NodeId *nodeId)
-{
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
-    return parent->getEnd(server, parent->context, sessionId, sessionContext, nodeId);
-}
-
-static size_t
-lastIndex_backend_sqlite(UA_Server *server, void *context, const UA_NodeId *sessionId,
-                         void *sessionContext, const UA_NodeId *nodeId)
-{
-    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
-    UA_HistoryDataBackend *parent = &(ctx)->parent;
-
-    CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
-
-    FixedCharBuffer sqlFmt =
-        "SELECT ROWID FROM HISTORY WHERE NODEID = %Q ORDER BY ROWID ASC LIMIT 1";
-
-    SQLCharBuffer sqlCmd = sqlite3_mprintf(sqlFmt, nodeIdCStr);
-    SqliteGetValueContext rowidCxt = {COLUMN_ROWID, 0u, 0u};
-    if(sqlCmd) {
-        sqlite3_exec(ctx->sqldb, sqlCmd, callback_db_getValue, &rowidCxt, NULL);
-        DeleteSQLCharBuffer(&sqlCmd);
-    }
-    DeleteCharBuffer(&nodeIdCStr);
-    return parent->lastIndex(server, parent->context, sessionId, sessionContext, nodeId);
-}
-
-static size_t
-firstIndex_backend_sqlite(UA_Server *server, void *context, const UA_NodeId *sessionId,
-                              void *sessionContext, const UA_NodeId *nodeId)
-{
-    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
-    UA_HistoryDataBackend *parent = &(ctx)->parent;
-
-    CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
-
-    FixedCharBuffer sqlFmt =
-        "SELECT ROWID FROM HISTORY WHERE NODEID = %Q ORDER BY ROWID DESC LIMIT 1";
-
-    SQLCharBuffer sqlCmd = sqlite3_mprintf(sqlFmt, nodeIdCStr);
-    SqliteGetValueContext rowidCtx = { COLUMN_ROWID, 0u, 0u};
-    if(sqlCmd) {
-        sqlite3_exec(ctx->sqldb, sqlCmd, callback_db_getValue, &rowidCtx, NULL);
-        DeleteSQLCharBuffer(&sqlCmd);
-    }
-    DeleteCharBuffer(&nodeIdCStr);
-    return parent->firstIndex(server, parent->context, sessionId, sessionContext, nodeId);
-}
-
-static size_t
-getDateTimeMatch_backend_sqlite(UA_Server *server, void *context,
-                                    const UA_NodeId *sessionId, void *sessionContext,
-                                    const UA_NodeId *nodeId, const UA_DateTime timestamp,
-                                    const MatchStrategy strategy)
-{
-    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
-    UA_HistoryDataBackend *parent = &(ctx)->parent;
-
-    CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
-
-    FixedCharBuffer sqlFmt = 
-        "SELECT ROWID FROM HISTORY"
-        " WHERE NODEID = %Q"
-        "   AND TIMESTAMP %s %lld "
-        "   %s LIMIT 1";
-
-    ConstCharBuffer sqlOrdering = "";
-    ConstCharBuffer sqlCompare = "=";
-    switch(strategy) {
-        case MATCH_EQUAL:
-            sqlCompare = "=";
-            break;
-        case MATCH_AFTER:
-            sqlCompare = ">";
-            sqlOrdering = "ORDER BY ROWID ASC";
-            break;
-        case MATCH_BEFORE:
-            sqlCompare = "<";
-            sqlOrdering = "ORDER BY ROWID DESC";
-            break;
-        case MATCH_EQUAL_OR_AFTER:
-            sqlCompare = ">=";
-            sqlOrdering = "ORDER BY ROWID ASC";
-            break;
-        case MATCH_EQUAL_OR_BEFORE:
-            sqlCompare = "<=";
-            sqlOrdering = "ORDER BY ROWID DESC";
-            break;
-        default:
-            break;
-    }
-
-    SQLCharBuffer sqlCmd = sqlite3_mprintf(sqlFmt, nodeIdCStr, sqlCompare, timestamp, sqlOrdering);
-    SqliteGetValueContext rowidCtx = {COLUMN_ROWID, 0u, 0u};
-    if(sqlCmd) {
-        sqlite3_exec(ctx->sqldb, sqlCmd, callback_db_getValue, &rowidCtx, NULL);
-        DeleteSQLCharBuffer(&sqlCmd);
-    }
-    DeleteCharBuffer(&nodeIdCStr);
-
-    return parent->getDateTimeMatch(server, parent->context, sessionId, sessionContext, nodeId, timestamp, strategy);
-}
-
-static UA_StatusCode
-copyDataValues_backend_sqlite(UA_Server *server, void *context,
-                              const UA_NodeId *sessionId, void *sessionContext,
-                              const UA_NodeId *nodeId, size_t startIndex, size_t endIndex,
-                              UA_Boolean reverse, size_t maxValues, UA_NumericRange range,
-                              UA_Boolean releaseContinuationPoints,
-                              const UA_ByteString *continuationPoint,
-                              UA_ByteString *outContinuationPoint, size_t *providedValues,
-                              UA_DataValue *values)
-{
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
-    return parent->copyDataValues(server, parent->context, sessionId, sessionContext, nodeId,
-                                  startIndex, endIndex, reverse, maxValues, range,
-                                  releaseContinuationPoints, continuationPoint,
-                                  outContinuationPoint, providedValues, values);
-}
-
-static const UA_DataValue*
-getDataValue_backend_sqlite(UA_Server *server, void *context, const UA_NodeId *sessionId, 
-                                void *sessionContext, const UA_NodeId *nodeId, size_t index)
-{
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
-    return parent->getDataValue(server, parent->context, sessionId, sessionContext,
-                                nodeId, index);
 }
 
 static UA_Boolean
@@ -981,13 +815,13 @@ UA_HistoryDataBackend_SQLite(UA_HistoryDataBackend parent, const char* dbFilePat
         return newBackend;
 
     newBackend.serverSetHistoryData = &serverSetHistoryData_backend_sqlite_Default;
-    newBackend.resultSize = &resultSize_backend_sqlite;
-    newBackend.getEnd = &getEnd_backend_sqlite;
-    newBackend.lastIndex = &lastIndex_backend_sqlite;
-    newBackend.firstIndex = &firstIndex_backend_sqlite;
-    newBackend.getDateTimeMatch = &getDateTimeMatch_backend_sqlite;
-    newBackend.copyDataValues = &copyDataValues_backend_sqlite;
-    newBackend.getDataValue = &getDataValue_backend_sqlite;
+    newBackend.resultSize = LOWLEVELITF_NOTIMPL; // &resultSize_backend_sqlite;
+    newBackend.getEnd = LOWLEVELITF_NOTIMPL; // &getEnd_backend_sqlite;
+    newBackend.lastIndex = LOWLEVELITF_NOTIMPL; // &lastIndex_backend_sqlite;
+    newBackend.firstIndex = LOWLEVELITF_NOTIMPL; // &firstIndex_backend_sqlite;
+    newBackend.getDateTimeMatch = LOWLEVELITF_NOTIMPL; // &getDateTimeMatch_backend_sqlite;
+    newBackend.copyDataValues = LOWLEVELITF_NOTIMPL; // &copyDataValues_backend_sqlite;
+    newBackend.getDataValue = LOWLEVELITF_NOTIMPL; // &getDataValue_backend_sqlite;
     newBackend.boundSupported = &boundSupported_backend_sqlite;
     newBackend.timestampsToReturnSupported = &timestampsToReturnSupported_backend_sqlite;
     newBackend.insertDataValue = &insertDataValue_backend_sqlite;
