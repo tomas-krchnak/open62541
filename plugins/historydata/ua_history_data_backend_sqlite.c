@@ -202,15 +202,6 @@ uaValueTimeStamp(const UA_DataValue* value)
 }
 
 static UA_Boolean
-JsonDecode_NodeId(FixedCharBuffer json, UA_NodeId *nodeId) {
-    UA_ByteString uaJson;
-    uaJson.length = strlen(json);
-    uaJson.data = (UA_Byte *)json;
-    return UA_StatusCode_isGood(
-        UA_decodeJson(&uaJson, nodeId, &UA_TYPES[UA_TYPES_NODEID], NULL));
-}
-
-static UA_Boolean
 JsonDecode_DataValue(FixedCharBuffer json, UA_DataValue *dataValue) {
     UA_ByteString uaJson;
     uaJson.length = strlen(json);
