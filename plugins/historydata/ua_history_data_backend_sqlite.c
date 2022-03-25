@@ -23,7 +23,6 @@ static const FixedCharBuffer COLUMN_DATAVALUE = "DATAVALUE";
 #define LOWLEVELITF_NOTIMPL (NULL)
 
 typedef struct UA_SqliteStoreContext {
-    UA_HistoryDataBackend parent;
     sqlite3 *sqldb;
     long dbSchemeVersion;
     void (*pruneExecuteFunc)(struct UA_SqliteStoreContext *ctx);
@@ -256,15 +255,13 @@ serverSetHistoryData_backend_sqlite_Default(UA_Server *server, void *context,
                                             const UA_NodeId *sessionId, void *sessionContext,
                                             const UA_NodeId *nodeId, UA_Boolean historizing,
                                             const UA_DataValue *value) {
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
     UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
 
     if(historizing) {
-        sqliteBackend_db_storeHistoryEntry(ctx, sessionId, nodeId, value);
+        res = sqliteBackend_db_storeHistoryEntry(ctx, sessionId, nodeId, value);
     }
-
-    return parent->serverSetHistoryData(server, parent->context, sessionId,
-                                        sessionContext, nodeId, historizing, value);
+    return res;
 }
 
 static UA_StatusCode
@@ -273,44 +270,37 @@ serverSetHistoryData_backend_sqlite_Circular(UA_Server *server, void *context,
                                              const UA_NodeId *nodeId, UA_Boolean historizing,
                                              const UA_DataValue *value)
 {
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
     UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
 
     if(historizing) {
-        sqliteBackend_db_storeHistoryEntry(ctx, sessionId, nodeId, value);
+        res = sqliteBackend_db_storeHistoryEntry(ctx, sessionId, nodeId, value);
         sqliteBackend_db_prune_if_needed(ctx);
     }
-
-    return parent->serverSetHistoryData(server, parent->context, sessionId,
-                                        sessionContext, nodeId, historizing, value);
+    return res;
 }
 
 static UA_StatusCode
 serverSetHistoryData_backend_sqlite_MaxRetainingTime(
     UA_Server *server, void *context, const UA_NodeId *sessionId, void *sessionContext,
-    const UA_NodeId *nodeId, UA_Boolean historizing, const UA_DataValue *value) {
-
+    const UA_NodeId *nodeId, UA_Boolean historizing, const UA_DataValue *value
+) {
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
     UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)context;
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
 
     if(historizing) {
-        sqliteBackend_db_storeHistoryEntry(ctx, sessionId, nodeId, value);
+        res = sqliteBackend_db_storeHistoryEntry(ctx, sessionId, nodeId, value);
         sqliteBackend_db_prune_if_needed(ctx);
-        parent->removeDataValue(server, parent->context, sessionId, sessionContext,
-                                nodeId, 0,
-                                ctx->pruneRequestTimestamp);
     }
-
-    return parent->serverSetHistoryData(server, parent->context, sessionId,
-                                        sessionContext, nodeId, historizing, value);
+    return res;
 }
 
 static UA_Boolean
 boundSupported_backend_sqlite(UA_Server *server, void *context,
                                   const UA_NodeId *sessionId, void *sessionContext,
-                                  const UA_NodeId *nodeId) {
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
-    return parent->boundSupported(server, parent->context, sessionId, sessionContext, nodeId);
+                                  const UA_NodeId *nodeId)
+{
+    return true;
 }
 
 static UA_Boolean
@@ -319,25 +309,36 @@ timestampsToReturnSupported_backend_sqlite(UA_Server *server, void *context,
                                            const UA_NodeId *nodeId,
                                            const UA_TimestampsToReturn timestampsToReturn)
 {
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
-    return parent->timestampsToReturnSupported(
-        server, parent->context, sessionId, sessionContext, nodeId, timestampsToReturn);
+    UA_Boolean supported = true;
+
+    switch(timestampsToReturn) {
+        case UA_TIMESTAMPSTORETURN_SOURCE:
+        break;
+        case UA_TIMESTAMPSTORETURN_SERVER:
+        break;
+        case UA_TIMESTAMPSTORETURN_BOTH:
+            break;
+        case UA_TIMESTAMPSTORETURN_NEITHER:
+        case UA_TIMESTAMPSTORETURN_INVALID:
+        default:
+            supported = false;
+            break;
+    }
+    return supported;
 }
 
 static UA_StatusCode
 insertDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
-                                   const UA_NodeId *sessionId, void *sessionContext,
-                                   const UA_NodeId *nodeId, const UA_DataValue *value)
+                               const UA_NodeId *sessionId, void *sessionContext,
+                               const UA_NodeId *nodeId, const UA_DataValue *value)
 {
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)hdbContext;
+
     const UA_DateTime timestamp = uaValueTimeStamp(value);
     if(!timestamp) {
         return UA_STATUSCODE_BADINVALIDTIMESTAMP;
     }
-
-    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)hdbContext;
-    UA_HistoryDataBackend *parent = &ctx->parent;
-    UA_StatusCode res = parent->insertDataValue(server, parent->context, sessionId, sessionContext,
-                                                nodeId, value);
 
     if(UA_StatusCode_isGood(res)) {
         CharBuffer sessionIdCStr = AllocUaNodeIdAsJsonCStr(sessionId);
@@ -367,15 +368,14 @@ updateDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
                                    const UA_NodeId *sessionId, void *sessionContext,
                                    const UA_NodeId *nodeId, const UA_DataValue *value)
 {
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)hdbContext;
+
     const UA_DateTime timestamp = uaValueTimeStamp(value);
     if(!timestamp) {
         return UA_STATUSCODE_BADINVALIDTIMESTAMP;
     }
 
-    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)hdbContext;
-    UA_HistoryDataBackend *parent = &ctx->parent;
-    UA_StatusCode res = parent->updateDataValue(server, parent->context, sessionId, sessionContext,
-                                            nodeId, value);
     if(UA_StatusCode_isGood(res)) {
         CharBuffer sessionIdCStr = AllocUaNodeIdAsJsonCStr(sessionId);
         CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
@@ -404,15 +404,14 @@ replaceDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
                                     const UA_NodeId *sessionId, void *sessionContext,
                                     const UA_NodeId *nodeId, const UA_DataValue *value)
 {
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)hdbContext;
+
     const UA_DateTime timestamp = uaValueTimeStamp(value);
     if(!timestamp) {
         return UA_STATUSCODE_BADINVALIDTIMESTAMP;
     }
 
-    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)hdbContext;
-    UA_HistoryDataBackend *parent = &ctx->parent;
-    UA_StatusCode res = parent->replaceDataValue(server, parent->context, sessionId,
-                                                 sessionContext, nodeId, value);
     if(UA_StatusCode_isGood(res)) {
         CharBuffer sessionIdCStr = AllocUaNodeIdAsJsonCStr(sessionId);
         CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
@@ -444,14 +443,12 @@ removeDataValue_backend_sqlite(UA_Server *server, void *hdbContext,
                                    const UA_NodeId *nodeId, UA_DateTime startTimestamp,
                                    UA_DateTime endTimestamp)
 {
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)hdbContext;
+
     if(startTimestamp > endTimestamp) {
         return UA_STATUSCODE_BADTIMESTAMPNOTSUPPORTED;
     }
-    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)hdbContext;
-    UA_HistoryDataBackend *parent = &ctx->parent;
-    UA_StatusCode res = 
-        parent->removeDataValue(server, parent->context, sessionId,
-                                sessionContext, nodeId, startTimestamp, endTimestamp);
 
     if(UA_StatusCode_isGood(res)) {
         CharBuffer nodeIdCStr = AllocUaNodeIdAsJsonCStr(nodeId);
@@ -479,9 +476,6 @@ deleteMembers_backend_sqlite(UA_HistoryDataBackend *backend)
 {
     if(backend == NULL || backend->context == NULL)
         return;
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)backend->context)->parent;
-    if (parent)
-        parent->deleteMembers(parent);
 
     UA_SqliteStoreContext_clear((UA_SqliteStoreContext *)backend->context);
     UA_free(backend->context);
@@ -497,15 +491,7 @@ getHistoryData_service_sqlite_Circular(
     const UA_ByteString *continuationPoint, UA_ByteString *outContinuationPoint,
     UA_HistoryData *historyData
 ) {
-    UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)backend->context)->parent;
-    if(parent->getHistoryData)
-        return parent->getHistoryData(server, sessionId, sessionContext, parent, start,
-                                      end, nodeId, maxSizePerResponse, numValuesPerNode,
-                                      returnBounds, timestampsToReturn, range,
-                                      releaseContinuationPoints, continuationPoint,
-                                      outContinuationPoint, historyData);
-    else
-        return UA_STATUSCODE_BADNOTIMPLEMENTED;
+    return UA_STATUSCODE_BADNOTIMPLEMENTED;
 }
 
 static int
@@ -560,7 +546,6 @@ getHistoryData_service_sqlite_MaxRetainingTime(
     UA_StatusCode res = UA_STATUSCODE_GOOD;
 
     const UA_SqliteStoreContext *ctx = (const UA_SqliteStoreContext *)(backend->context);
-    const UA_HistoryDataBackend *parent = &ctx->parent;
 
     size_t skip = 0;
     if(continuationPoint->length > 0) {
@@ -651,7 +636,6 @@ getHistoryData_service_sqlite_MaxRetainingTime(
         historyData->dataValues = (UA_DataValue *)UA_Array_new(nrValuesToReturn, &UA_TYPES[UA_TYPES_DATAVALUE]);
         res = UA_Array_copy(getValuesContext.dataValues, nrValuesToReturn,
                             (void **)&historyData->dataValues, &UA_TYPES[UA_TYPES_DATAVALUE]);
-        // TODO: timestamps to return
 
         if (UA_StatusCode_isGood(res) && continuationNeeded) {
             UA_ByteString newContinuationPoint;
@@ -731,61 +715,6 @@ sqliteBackend_db_open(UA_SqliteStoreContext *context, FixedCharBuffer dbFilePath
     }
 }
 
-static void
-restoreHistoryEntry(
-    UA_SqliteStoreContext *context,
-    FixedCharBuffer sessionIdAsJson,
-    FixedCharBuffer nodeIdAsJson,
-    FixedCharBuffer valueAsJson)
-{
-    UA_NodeId sessionId = UA_NODEID_NULL;
-    UA_NodeId nodeId = UA_NODEID_NULL;
-    UA_DataValue dataValue;
-    UA_DataValue_init(&dataValue);
-
-    const bool sidOk = JsonDecode_NodeId(sessionIdAsJson, &sessionId);
-    const bool nidOk = JsonDecode_NodeId(nodeIdAsJson, &nodeId);
-    const bool dvOk = JsonDecode_DataValue(valueAsJson, &dataValue);
-
-    if(sidOk && nidOk && dvOk) {
-        UA_HistoryDataBackend *parent = &((UA_SqliteStoreContext *)context)->parent;
-        parent->serverSetHistoryData(NULL, parent->context, &sessionId, NULL, &nodeId, true, &dataValue);
-    }
-
-    UA_NodeId_clear(&sessionId);
-    UA_NodeId_clear(&nodeId);
-    UA_DataValue_clear(&dataValue);
-}
-
-static int
-callback_db_restore_entry(void *context, int argc, char **argv, char **azColName) {
-    int i;
-    ConstCharBuffer nodeId = NULL;
-    ConstCharBuffer sessionId = NULL;
-    ConstCharBuffer dataValue = NULL;
-    for(i = 0; i < argc; i++) {
-        FixedCharBuffer columnName = azColName[i];
-        FixedCharBuffer rowValue = argv[i];
-        if(IsSQLColumnName(columnName, COLUMN_SESSIONID))
-            sessionId = rowValue;
-        else if(IsSQLColumnName(columnName, COLUMN_NODEID))
-            nodeId = rowValue;
-        else if(IsSQLColumnName(columnName, COLUMN_DATAVALUE))
-            dataValue = rowValue;
-    }
-    if(sessionId && nodeId && dataValue)
-        restoreHistoryEntry((UA_SqliteStoreContext *)context, sessionId, nodeId, dataValue);
-    return SQLITE_OK;
-}
-
-static void
-sqliteBackend_db_restore(UA_SqliteStoreContext *context)
-{
-    FixedCharBuffer sqlCmd =
-        "SELECT TIMESTAMP, SESSIONID, NODEID, DATAVALUE FROM HISTORY";
-    sqlite3_exec(context->sqldb, sqlCmd, callback_db_restore_entry, context, NULL);
-}
-
 static UA_SqliteStoreContext*
 sqliteBackend_createDefaultStoreContext(UA_HistoryDataBackend parent)
 {
@@ -794,7 +723,6 @@ sqliteBackend_createDefaultStoreContext(UA_HistoryDataBackend parent)
     if(!ctx)
         return ctx;
 
-    ctx->parent = parent;
     ctx->pruneExecuteFunc = sqliteBackend_db_prune_execute_never;
     ctx->pruneNeededFunc = sqliteBackend_db_prune_needed_never;
     ctx->pruneRetainTimeSec = 0;
@@ -833,7 +761,6 @@ UA_HistoryDataBackend_SQLite(UA_HistoryDataBackend parent, const char* dbFilePat
 
     sqliteBackend_db_open(ctx, dbFilePath);
     sqliteBackend_db_upgrade(ctx);
-    sqliteBackend_db_restore(ctx);
     newBackend.context = ctx;
 
     return newBackend;
