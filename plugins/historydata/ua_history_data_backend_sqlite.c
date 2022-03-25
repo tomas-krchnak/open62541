@@ -39,6 +39,7 @@ typedef struct SqliteGetHistoryValuesContext {
     size_t maxNrDataValues;
     UA_TimestampsToReturn timestampsToReturn;
     UA_DataValue *dataValues;
+    UA_NumericRange requestedRange;
 } SqliteGetHistoryValuesContext;
 
 static void
@@ -525,7 +526,14 @@ callback_db_getHistoryEntries(void *context, int argc, char **argv, char **azCol
                     dataValue.sourceTimestamp = 0u;
                     dataValue.sourcePicoseconds = 0u;
                 }
-                *currentValue = dataValue;
+                UA_NumericRange range = ctx->requestedRange;
+                if(range.dimensionsSize > 0) {
+                    memcpy(currentValue, &dataValue, sizeof(UA_DataValue));
+                    if(dataValue.hasValue)
+                        UA_Variant_copyRange(&dataValue.value, &currentValue->value, range);
+                } else {
+                    UA_DataValue_copy(&dataValue, currentValue);
+                }
                 ctx->nrValuesFound++;
             }
         }
@@ -567,16 +575,16 @@ getHistoryData_service_sqlite_MaxRetainingTime(
      * @param OK maxSizePerResponse is the maximum number of items per response the server can provide.
      *                              if more are requested, continuation points are used.
      * @param OK numValuesPerNode   maximum number of items per response the client wants to receive.
-     * @param ?? returnBounds       determines if the client wants to receive bounding values.
-     * @param ?? timestampsToReturn contains the time stamps the client is interested in.
-     * @param ?? range              numeric range the client wants to read.
+     * @param OK returnBounds       determines if the client wants to receive bounding values.
+     * @param OK timestampsToReturn contains the time stamps the client is interested in.
+     * @param OK range              numeric range the client wants to read.
      *           ***Continuation ***
      * @param ?? releaseContinuationPoints determines if the continuation points
      *           shall be released.
      * @param OK continuationPoint is the continuation point the client wants to release
      *           or start from.
      * @param OK outContinuationPoint is the continuation point that gets passed to the
-     *          client by the HistoryRead service.
+     *           client by the HistoryRead service.
      * @param OK result contains the result history data that gets passed to the client.
      * @return UA_STATUSCODE_GOOD on success.
      */
@@ -587,6 +595,7 @@ getHistoryData_service_sqlite_MaxRetainingTime(
     getValuesContext.timestampsToReturn = timestampsToReturn;
     getValuesContext.dataValues = (UA_DataValue *)UA_Array_new(
         getValuesContext.maxNrDataValues, &UA_TYPES[UA_TYPES_DATAVALUE]);
+    getValuesContext.requestedRange = range;
 
     const size_t startOffset = skip;
     const size_t maxNrEntriesToSelect =
