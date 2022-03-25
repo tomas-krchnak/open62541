@@ -49,6 +49,13 @@ UA_SqliteStoreContext_clear(UA_SqliteStoreContext *ctx) {
     memset(ctx, 0, sizeof(UA_SqliteStoreContext));
 }
 
+static void
+UA_SqliteStoreContext_delete(UA_SqliteStoreContext *ctx)
+{
+    UA_SqliteStoreContext_clear(ctx);
+    UA_free(ctx);
+}
+
 static CharBuffer
 AllocCharBuffer(size_t len)
 {
@@ -751,6 +758,13 @@ UA_HistoryDataBackend_SQLite(const char* dbFilePath)
     newBackend.context = ctx;
 
     return newBackend;
+}
+
+void
+UA_HistoryDataBackend_SQLite_clear(UA_HistoryDataBackend *backend) {
+    UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)backend->context;
+    UA_SqliteStoreContext_delete(ctx);
+    memset(backend, 0, sizeof(UA_HistoryDataBackend));
 }
 
 UA_HistoryDataBackend
