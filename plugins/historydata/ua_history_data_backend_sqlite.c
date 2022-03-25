@@ -473,19 +473,6 @@ deleteMembers_backend_sqlite(UA_HistoryDataBackend *backend)
     UA_free(backend->context);
 }
 
-static UA_StatusCode
-getHistoryData_service_sqlite_Circular(
-    UA_Server *server, const UA_NodeId *sessionId, void *sessionContext,
-    const UA_HistoryDataBackend *backend, const UA_DateTime start, const UA_DateTime end,
-    const UA_NodeId *nodeId, size_t maxSizePerResponse, UA_UInt32 numValuesPerNode,
-    UA_Boolean returnBounds, UA_TimestampsToReturn timestampsToReturn,
-    UA_NumericRange range, UA_Boolean releaseContinuationPoints,
-    const UA_ByteString *continuationPoint, UA_ByteString *outContinuationPoint,
-    UA_HistoryData *historyData
-) {
-    return UA_STATUSCODE_BADNOTIMPLEMENTED;
-}
-
 static int
 callback_db_getHistoryEntries(void *context, int argc, char **argv, char **azColName) {
     SqliteGetHistoryValuesContext *ctx = (SqliteGetHistoryValuesContext *)context;
@@ -533,7 +520,7 @@ callback_db_getHistoryEntries(void *context, int argc, char **argv, char **azCol
 }
 
 static UA_StatusCode
-getHistoryData_service_sqlite_MaxRetainingTime(
+getHistoryData_service_sqlite(
     UA_Server *server, const UA_NodeId *sessionId, void *sessionContext,
     const UA_HistoryDataBackend *backend, const UA_DateTime start, const UA_DateTime end,
     const UA_NodeId *nodeId, size_t maxSizePerResponse, UA_UInt32 numValuesPerNode,
@@ -716,7 +703,7 @@ sqliteBackend_db_open(UA_SqliteStoreContext *context, FixedCharBuffer dbFilePath
 }
 
 static UA_SqliteStoreContext*
-sqliteBackend_createDefaultStoreContext(UA_HistoryDataBackend parent)
+sqliteBackend_createDefaultStoreContext(void)
 {
     UA_SqliteStoreContext *ctx =
         (UA_SqliteStoreContext *)UA_calloc(1, sizeof(UA_SqliteStoreContext));
@@ -733,12 +720,12 @@ sqliteBackend_createDefaultStoreContext(UA_HistoryDataBackend parent)
 }
 
 UA_HistoryDataBackend
-UA_HistoryDataBackend_SQLite(UA_HistoryDataBackend parent, const char* dbFilePath) 
+UA_HistoryDataBackend_SQLite(const char* dbFilePath) 
 {
     UA_HistoryDataBackend newBackend;
     memset(&newBackend, 0, sizeof(UA_HistoryDataBackend));
 
-    UA_SqliteStoreContext *ctx = sqliteBackend_createDefaultStoreContext(parent);
+    UA_SqliteStoreContext *ctx = sqliteBackend_createDefaultStoreContext();
     if (!ctx)
         return newBackend;
 
@@ -757,7 +744,7 @@ UA_HistoryDataBackend_SQLite(UA_HistoryDataBackend parent, const char* dbFilePat
     newBackend.replaceDataValue = &replaceDataValue_backend_sqlite;
     newBackend.removeDataValue = &removeDataValue_backend_sqlite;
     newBackend.deleteMembers = &deleteMembers_backend_sqlite;
-    newBackend.getHistoryData = NULL;
+    newBackend.getHistoryData = getHistoryData_service_sqlite;
 
     sqliteBackend_db_open(ctx, dbFilePath);
     sqliteBackend_db_upgrade(ctx);
@@ -767,14 +754,12 @@ UA_HistoryDataBackend_SQLite(UA_HistoryDataBackend parent, const char* dbFilePat
 }
 
 UA_HistoryDataBackend
-UA_HistoryDataBackend_SQLite_Circular(UA_HistoryDataBackend parent,
-                                      const char *dbFilePath,
+UA_HistoryDataBackend_SQLite_Circular(const char *dbFilePath,
                                       size_t pruneInterval,
                                       size_t maxValuesPerNode)
 {
-    UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(parent, dbFilePath);
+    UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(dbFilePath);
     newBackend.serverSetHistoryData = &serverSetHistoryData_backend_sqlite_Circular;
-    newBackend.getHistoryData = &getHistoryData_service_sqlite_Circular;
 
     UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)newBackend.context;
     if(ctx) {
@@ -790,18 +775,14 @@ UA_HistoryDataBackend_SQLite_Circular(UA_HistoryDataBackend parent,
 }
 
 UA_HistoryDataBackend
-UA_HistoryDataBackend_SQLite_TimeBuffered(UA_HistoryDataBackend parent,
-                                          const char *dbFilePath, 
-                                          UA_DateTime pruneRetainTimeSec,
-                                          size_t maxValuesPerNode
+UA_HistoryDataBackend_SQLite_TimeBuffered(const char *dbFilePath, 
+                                          UA_DateTime pruneRetainTimeSec
 ) {
-    UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(parent, dbFilePath);
+    UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(dbFilePath);
     newBackend.serverSetHistoryData = &serverSetHistoryData_backend_sqlite_MaxRetainingTime;
-    newBackend.getHistoryData = &getHistoryData_service_sqlite_MaxRetainingTime;
 
     UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)newBackend.context;
     if(ctx) {
-        ctx->maxValuesPerNode = maxValuesPerNode;
         ctx->pruneNeededFunc = sqliteBackend_db_prune_needed_default;
         ctx->pruneExecuteFunc = sqliteBackend_db_prune_execute_timed;
         ctx->pruneRetainTimeSec = pruneRetainTimeSec;
