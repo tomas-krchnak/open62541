@@ -789,7 +789,8 @@ UA_HistoryDataBackend_SQLite_Circular(const char *dbFilePath,
 }
 
 UA_HistoryDataBackend
-UA_HistoryDataBackend_SQLite_TimeBuffered(const char *dbFilePath, 
+UA_HistoryDataBackend_SQLite_TimeBuffered(const char *dbFilePath,
+                                          size_t pruneInterval,
                                           UA_DateTime pruneRetainTimeSec
 ) {
     UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(dbFilePath);
@@ -800,7 +801,7 @@ UA_HistoryDataBackend_SQLite_TimeBuffered(const char *dbFilePath,
         ctx->pruneNeededFunc = sqliteBackend_db_prune_needed_default;
         ctx->pruneExecuteFunc = sqliteBackend_db_prune_execute_timed;
         ctx->pruneRetainTimeSec = pruneRetainTimeSec;
-        ctx->pruneTriggerInterval = 10;
+        ctx->pruneTriggerInterval = pruneInterval;
         ctx->pruneCheckCount = 0;
         sqliteBackend_db_prune_if_needed(ctx);
     }

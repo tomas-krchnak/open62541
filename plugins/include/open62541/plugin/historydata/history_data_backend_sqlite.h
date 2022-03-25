@@ -39,6 +39,7 @@ UA_HistoryDataBackend_SQLite_Circular(const char *dbFilePath,
  */
 UA_HistoryDataBackend UA_EXPORT
 UA_HistoryDataBackend_SQLite_TimeBuffered(const char *dbFilePath,
+                                          size_t pruneInterval,
                                           UA_DateTime pruneRetainTimeSec);
 
 void UA_EXPORT
