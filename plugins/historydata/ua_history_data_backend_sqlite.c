@@ -13,11 +13,7 @@ typedef char*              SQLCharBuffer;
 typedef const char *       ConstCharBuffer;
 typedef const char * const FixedCharBuffer;
 
-static const FixedCharBuffer COLUMN_ROWID = "ROWID";
 static const FixedCharBuffer COLUMN_VERSION = "VERSION";
-static const FixedCharBuffer COLUMN_TIMESTAMP = "TIMESTAMP";
-static const FixedCharBuffer COLUMN_SESSIONID = "SESSION";
-static const FixedCharBuffer COLUMN_NODEID = "NODEID";
 static const FixedCharBuffer COLUMN_DATAVALUE = "DATAVALUE";
 
 #define LOWLEVELITF_NOTIMPL (NULL)
@@ -526,6 +522,29 @@ callback_db_getHistoryEntries(void *context, int argc, char **argv, char **azCol
     return SQLITE_OK;
 }
 
+/* This function is the high level interface for the ReadRaw operation. Used since
+ * we don't us the low level interface. All low level api functions are set to NULL.
+ *
+ * server               server the node lives in (not used)
+ * sessionId            identifies the session that wants to read historical data (not used)
+ * sessionContext       context of the session that wants to read historical data (not used)
+ * backend              HistoryDataBackend whose storage is to be queried.
+ * start                start time of the HistoryRead request.
+ * end                  end time of the HistoryRead request.
+ * nodeId               node id of the node for which historical data is requested.
+ * maxSizePerResponse   maximum number of items per response the server can provide.
+ *                      if more are requested, continuation points are used.
+ * numValuesPerNode     maximum number of items per response the client wants to receive.
+ * returnBounds         determines if the client wants to receive bounding values.
+ * timestampsToReturn   contains the time stamps the client is interested in.
+ * range                numeric range the client wants to read.
+ * releaseContinuationPoints determines if the continuation points shall be released.
+ * continuationPoint    continuation point the client wants to release or start from.
+ * outContinuationPoint continuation point that gets passed to the client by the HistoryRead service.
+ * historyData          history data that gets passed back to the client.
+ *
+ * returns UA_STATUSCODE_GOOD on success
+ */
 static UA_StatusCode
 getHistoryData_service_sqlite(
     UA_Server *server, const UA_NodeId *sessionId, void *sessionContext,
@@ -540,39 +559,12 @@ getHistoryData_service_sqlite(
 
     const UA_SqliteStoreContext *ctx = (const UA_SqliteStoreContext *)(backend->context);
 
-    size_t skip = 0;
+    size_t nrEntriesToSkip = 0;
     if(continuationPoint->length > 0) {
         if(continuationPoint->length < sizeof(size_t))
             return UA_STATUSCODE_BADCONTINUATIONPOINTINVALID;
-        skip = *((size_t *)(continuationPoint->data));
+        nrEntriesToSkip = *((size_t *)(continuationPoint->data));
     }
-
-    /*
-     * @param NU server is the server the node lives in.
-     * @param NU sessionId identify the session that wants to read historical data.
-     * @param NU sessionContext the session context.
-     * @param OK backend is the HistoryDataBackend whose storage is to be queried.
-     * @param OK start is the start time of the HistoryRead request
-     *           set to DateTime.MinValue if no specific start time is specified
-     * @param OK end is the end time of the HistoryRead request.
-     *           set to DateTime.MinValue if no specific end time is specified
-     * @param OK nodeId id of the node for which historical data is requested.
-     * @param OK maxSizePerResponse is the maximum number of items per response the server can provide.
-     *                              if more are requested, continuation points are used.
-     * @param OK numValuesPerNode   maximum number of items per response the client wants to receive.
-     * @param OK returnBounds       determines if the client wants to receive bounding values.
-     * @param OK timestampsToReturn contains the time stamps the client is interested in.
-     * @param OK range              numeric range the client wants to read.
-     *           ***Continuation ***
-     * @param ?? releaseContinuationPoints determines if the continuation points
-     *           shall be released.
-     * @param OK continuationPoint is the continuation point the client wants to release
-     *           or start from.
-     * @param OK outContinuationPoint is the continuation point that gets passed to the
-     *           client by the HistoryRead service.
-     * @param OK result contains the result history data that gets passed to the client.
-     * @return UA_STATUSCODE_GOOD on success.
-     */
 
     SqliteGetHistoryValuesContext getValuesContext;
     getValuesContext.maxNrDataValues = maxSizePerResponse + 1;
@@ -582,7 +574,6 @@ getHistoryData_service_sqlite(
         getValuesContext.maxNrDataValues, &UA_TYPES[UA_TYPES_DATAVALUE]);
     getValuesContext.requestedRange = range;
 
-    const size_t startOffset = skip;
     const size_t maxNrEntriesToSelect =
         (maxSizePerResponse < numValuesPerNode || numValuesPerNode == 0)
             ? (maxSizePerResponse + 1) // Peek one ahead to check for continuation
@@ -610,8 +601,8 @@ getHistoryData_service_sqlite(
     sqlite3_str_appendf(sqlCmdStr, sqlOrderFmt, orderBySorting);
     if(maxNrEntriesToSelect > 0)
         sqlite3_str_appendf(sqlCmdStr, sqlLimitFmt, maxNrEntriesToSelect);
-    if(startOffset > 0)
-        sqlite3_str_appendf(sqlCmdStr, sqlOffsetFmt, startOffset);
+    if(nrEntriesToSkip > 0)
+        sqlite3_str_appendf(sqlCmdStr, sqlOffsetFmt, nrEntriesToSkip);
     SQLCharBuffer sqlCmd = sqlite3_str_finish(sqlCmdStr);
 
     if(sqlCmd) {
@@ -637,7 +628,7 @@ getHistoryData_service_sqlite(
             newContinuationPoint.length = sizeof(size_t);
             newContinuationPoint.data = (UA_Byte*)UA_malloc(newContinuationPoint.length);
             if(newContinuationPoint.data) {
-                *((size_t *)(newContinuationPoint.data)) = skip + maxSizePerResponse;
+                *((size_t *)(newContinuationPoint.data)) = nrEntriesToSkip + maxSizePerResponse;
                 UA_ByteString_copy(&newContinuationPoint, outContinuationPoint);
                 UA_ByteString_clear(&newContinuationPoint);
             } else {
