@@ -692,6 +692,13 @@ sqliteBackend_db_upgrade(UA_SqliteStoreContext *context) {
 }
 
 static void
+sqliteBackend_db_reset(UA_SqliteStoreContext *context)
+{
+    FixedCharBuffer sqlCmd = "DELETE FROM HISTORY WHERE NODEID LIKE '%'";
+    sqlite3_exec(context->sqldb, sqlCmd, NULL, NULL, NULL);
+}
+
+static void
 sqliteBackend_db_open(UA_SqliteStoreContext *context, FixedCharBuffer dbFilePath) {
     int sqlRet = sqlite3_open(dbFilePath, &context->sqldb);
 
@@ -718,7 +725,7 @@ sqliteBackend_createDefaultStoreContext(void)
 }
 
 UA_HistoryDataBackend
-UA_HistoryDataBackend_SQLite(const char* dbFilePath) 
+UA_HistoryDataBackend_SQLite(const char* dbFilePath, UA_Boolean resetHistory) 
 {
     UA_HistoryDataBackend newBackend;
     memset(&newBackend, 0, sizeof(UA_HistoryDataBackend));
@@ -746,6 +753,8 @@ UA_HistoryDataBackend_SQLite(const char* dbFilePath)
 
     sqliteBackend_db_open(ctx, dbFilePath);
     sqliteBackend_db_upgrade(ctx);
+    if(resetHistory)
+        sqliteBackend_db_reset(ctx);
     newBackend.context = ctx;
 
     return newBackend;
@@ -761,9 +770,10 @@ UA_HistoryDataBackend_SQLite_clear(UA_HistoryDataBackend *backend) {
 UA_HistoryDataBackend
 UA_HistoryDataBackend_SQLite_Circular(const char *dbFilePath,
                                       size_t pruneInterval,
-                                      size_t maxValuesPerNode)
-{
-    UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(dbFilePath);
+                                      size_t maxValuesPerNode,
+                                      UA_Boolean resetHistory
+) {
+    UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(dbFilePath, resetHistory);
     newBackend.serverSetHistoryData = &serverSetHistoryData_backend_sqlite_Circular;
 
     UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)newBackend.context;
@@ -782,9 +792,10 @@ UA_HistoryDataBackend_SQLite_Circular(const char *dbFilePath,
 UA_HistoryDataBackend
 UA_HistoryDataBackend_SQLite_TimeBuffered(const char *dbFilePath,
                                           size_t pruneInterval,
-                                          UA_DateTime pruneRetainTimeSec
+                                          UA_DateTime pruneRetainTimeSec,
+                                          UA_Boolean resetHistory
 ) {
-    UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(dbFilePath);
+    UA_HistoryDataBackend newBackend = UA_HistoryDataBackend_SQLite(dbFilePath, resetHistory);
     newBackend.serverSetHistoryData = &serverSetHistoryData_backend_sqlite_MaxRetainingTime;
 
     UA_SqliteStoreContext *ctx = (UA_SqliteStoreContext *)newBackend.context;

@@ -14,7 +14,7 @@
 _UA_BEGIN_DECLS
 
 UA_HistoryDataBackend UA_EXPORT
-UA_HistoryDataBackend_SQLite(const char *dbFilePath);
+UA_HistoryDataBackend_SQLite(const char *dbFilePath, UA_Boolean resetHistory);
 
 /* This function construct a UA_HistoryDataBackend which implements a persistent buffer.
  *
@@ -27,7 +27,8 @@ UA_HistoryDataBackend_SQLite(const char *dbFilePath);
 UA_HistoryDataBackend UA_EXPORT
 UA_HistoryDataBackend_SQLite_Circular(const char *dbFilePath,
                                       size_t pruneInterval,
-                                      size_t maxValuesPerNode);
+                                      size_t maxValuesPerNode,
+                                      UA_Boolean resetHistory);
 
 /* This function construct a UA_HistoryDataBackend which implements a persistent buffer.
  *
@@ -40,7 +41,8 @@ UA_HistoryDataBackend_SQLite_Circular(const char *dbFilePath,
 UA_HistoryDataBackend UA_EXPORT
 UA_HistoryDataBackend_SQLite_TimeBuffered(const char *dbFilePath,
                                           size_t pruneInterval,
-                                          UA_DateTime pruneRetainTimeSec);
+                                          UA_DateTime pruneRetainTimeSec,
+                                          UA_Boolean resetHistory);
 
 void UA_EXPORT
 UA_HistoryDataBackend_SQLite_clear(UA_HistoryDataBackend backend);
