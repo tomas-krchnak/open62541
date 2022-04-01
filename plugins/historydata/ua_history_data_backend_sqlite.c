@@ -7,6 +7,7 @@
 
 #include <open62541/plugin/historydata/history_data_backend_sqlite.h>
 #include <open62541/plugin/historydata/sqlite/sqlite3.h>
+#include <open62541/plugin/log_stdout.h>
 
 typedef char*              CharBuffer;
 typedef char*              SQLCharBuffer;
@@ -516,6 +517,8 @@ callback_db_getHistoryEntries(void *context, int argc, char **argv, char **azCol
                     UA_DataValue_copy(&dataValue, currentValue);
                 }
                 ctx->nrValuesFound++;
+            } else {
+                UA_LOG_WARNING(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "Bad history entry found (%s)", columnValue);
             }
         }
     }
