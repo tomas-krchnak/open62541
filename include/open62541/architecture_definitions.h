@@ -415,6 +415,10 @@ UA_STATIC_ASSERT(sizeof(bool) == 1, cannot_overlay_integers_with_large_bool);
     #define UA_atomic_sync()
 #endif
 
+#ifdef _MSC_VER
+    #include <intrin.h>
+#endif
+
 static UA_INLINE void *
 UA_atomic_xchg(void * volatile * addr, void *newptr) {
 #if UA_MULTITHREADING >= 100
@@ -434,7 +438,7 @@ static UA_INLINE void *
 UA_atomic_cmpxchg(void * volatile * addr, void *expected, void *newptr) {
 #if UA_MULTITHREADING >= 100
 #ifdef _MSC_VER /* Visual Studio */
-    return _InterlockedCompareExchangePointer(addr, expected, newptr);
+    return _InterlockedCompareExchangePointer(addr, newptr, expected);
 #else /* GCC/Clang */
     return __sync_val_compare_and_swap(addr, expected, newptr);
 #endif
@@ -451,7 +455,11 @@ static UA_INLINE uint32_t
 UA_atomic_addUInt32(volatile uint32_t *addr, uint32_t increase) {
 #if UA_MULTITHREADING >= 100
 #ifdef _MSC_VER /* Visual Studio */
-    return _InterlockedExchangeAdd(addr, increase) + increase;
+    // This seems to be either undefined or at least implementation-specific behavior but
+    // it seems to be the best that can be done. On MSVC x86 this basically compiles down
+    // to a LOCK XADD instruction, which will work for both unsigned or
+    // standard two's complement signed integer arithmetic
+    return (uint32_t)_InterlockedExchangeAdd((volatile long *)addr, (long)increase) + increase;
 #else /* GCC/Clang */
     return __sync_add_and_fetch(addr, increase);
 #endif
@@ -465,7 +473,11 @@ static UA_INLINE size_t
 UA_atomic_addSize(volatile size_t *addr, size_t increase) {
 #if UA_MULTITHREADING >= 100
 #ifdef _MSC_VER /* Visual Studio */
-    return _InterlockedExchangeAdd(addr, increase) + increase;
+    // This seems to be either undefined or at least implementation-specific behavior but
+    // it seems to be the best that can be done. On MSVC x86 this basically compiles down
+    // to a LOCK XADD instruction, which will work for both unsigned or
+    // standard two's complement signed integer arithmetic
+    return (size_t)_InterlockedExchangeAdd((volatile long *)addr, (long)increase) + increase;
 #else /* GCC/Clang */
     return __sync_add_and_fetch(addr, increase);
 #endif
@@ -479,7 +491,11 @@ static UA_INLINE uint32_t
 UA_atomic_subUInt32(volatile uint32_t *addr, uint32_t decrease) {
 #if UA_MULTITHREADING >= 100
 #ifdef _MSC_VER /* Visual Studio */
-    return _InterlockedExchangeSub(addr, decrease) - decrease;
+    // This seems to be either undefined or at least implementation-specific behavior but
+    // it seems to be the best that can be done. On MSVC x86 this basically compiles down
+    // to a LOCK XADD instruction, which will work for both unsigned or
+    // standard two's complement signed integer arithmetic
+    return (uint32_t)_InterlockedExchangeAdd((volatile long *)addr, -(long)decrease) + decrease;
 #else /* GCC/Clang */
     return __sync_sub_and_fetch(addr, decrease);
 #endif
@@ -493,7 +509,11 @@ static UA_INLINE size_t
 UA_atomic_subSize(volatile size_t *addr, size_t decrease) {
 #if UA_MULTITHREADING >= 100
 #ifdef _MSC_VER /* Visual Studio */
-    return _InterlockedExchangeSub(addr, decrease) - decrease;
+    // This seems to be either undefined or at least implementation-specific behavior but
+    // it seems to be the best that can be done. On MSVC x86 this basically compiles down
+    // to a LOCK XADD instruction, which will work for both unsigned or
+    // standard two's complement signed integer arithmetic
+    return (size_t)_InterlockedExchangeAdd((volatile long *)addr, -(long)decrease) + decrease;
 #else /* GCC/Clang */
     return __sync_sub_and_fetch(addr, decrease);
 #endif

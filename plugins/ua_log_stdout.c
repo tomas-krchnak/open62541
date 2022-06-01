@@ -11,8 +11,10 @@
 #include <stdio.h>
 
 #if UA_MULTITHREADING >= 100
+#ifdef UA_ARCHITECTURE_POSIX
 #include <pthread.h>
 static pthread_mutex_t printf_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
 #endif
 
 /* ANSI escape sequences for color output taken from here:
@@ -61,7 +63,9 @@ UA_Log_Stdout_log(void *context, UA_LogLevel level, UA_LogCategory category,
     UA_DateTimeStruct dts = UA_DateTime_toStruct(UA_DateTime_now() + tOffset);
 
 #if UA_MULTITHREADING >= 100
+#ifdef UA_ARCHITECTURE_POSIX
     pthread_mutex_lock(&printf_mutex);
+#endif
 #endif
 
     printf("[%04u-%02u-%02u %02u:%02u:%02u.%03u (UTC%+05d)] %s/%s" ANSI_COLOR_RESET "\t",
@@ -72,7 +76,9 @@ UA_Log_Stdout_log(void *context, UA_LogLevel level, UA_LogCategory category,
     fflush(stdout);
 
 #if UA_MULTITHREADING >= 100
+#ifdef UA_ARCHITECTURE_POSIX
     pthread_mutex_unlock(&printf_mutex);
+#endif
 #endif
 }
 
