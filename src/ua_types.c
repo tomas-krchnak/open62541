@@ -566,7 +566,7 @@ Variant_copy(UA_Variant const *src, UA_Variant *dst, const UA_DataType *_) {
     return UA_STATUSCODE_GOOD;
 }
 
-void 
+void
 UA_Variant_setScalar(UA_Variant *v, void * UA_RESTRICT p,
                      const UA_DataType *type) {
     UA_Variant_init(v);
@@ -575,7 +575,7 @@ UA_Variant_setScalar(UA_Variant *v, void * UA_RESTRICT p,
     v->data = p;
 }
 
- UA_StatusCode 
+UA_StatusCode
 UA_Variant_setScalarCopy(UA_Variant *v, const void * UA_RESTRICT p,
                          const UA_DataType *type) {
     void *n = UA_malloc(type->memSize);
@@ -1799,7 +1799,7 @@ UA_Array_append(void **p, size_t *size, void *newElem,
     return UA_STATUSCODE_GOOD;
 }
 
-UA_StatusCode 
+UA_StatusCode UA_EXPORT
 UA_Array_appendCopy(void **p, size_t *size, const void *newElem,
                     const UA_DataType *type) {
     char scratch[512];

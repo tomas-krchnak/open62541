@@ -1224,7 +1224,7 @@ closeSessionCallback(UA_Client *client, void *userdata,
 }
 
 UA_StatusCode UA_EXPORT
-    UA_Client_disconnectAsync(UA_Client *client) {
+UA_Client_disconnectAsync(UA_Client *client) {
     /* Set before sending the message to prevent recursion */
     client->sessionState = UA_SESSIONSTATE_CLOSING;
 

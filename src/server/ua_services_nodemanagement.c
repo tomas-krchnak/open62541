@@ -2665,7 +2665,7 @@ UA_Server_getMethodNodeCallback(UA_Server *server,
 /* Lifecycle Management */
 /************************/
 
-void 
+void UA_EXPORT
 UA_Server_setAdminSessionContext(UA_Server *server,
                                  void *context) {
     server->adminSession.sessionHandle = context;

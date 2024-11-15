@@ -391,7 +391,6 @@ class CGenerator(object):
 #include "open62541.h"
 #else
 #include <open62541/types.h>
-#include <open62541_export.h>
 ''' + ('#include <open62541/types_generated.h>\n' if self.parser.outname != "types" else '') + '''
 #endif
 
@@ -413,7 +412,7 @@ _UA_BEGIN_DECLS
         if totalCount > 0:
 
             self.printh(
-                "extern OPEN62541_EXPORT const UA_DataType UA_" + self.parser.outname.upper() + "[UA_" + self.parser.outname.upper() + "_COUNT];")
+                "extern UA_EXPORT const UA_DataType UA_" + self.parser.outname.upper() + "[UA_" + self.parser.outname.upper() + "_COUNT];")
 
             for ns in self.filtered_types:
                 for i, t_name in enumerate(self.filtered_types[ns]):
