@@ -82,7 +82,7 @@ typedef enum {
     UA_SERVERLIFECYLE_RUNNING
 } UA_ServerLifecycle;
 
-struct UA_EXPORT UA_Server {
+struct UA_Server {
     /* Config */
     UA_ServerConfig config;
     UA_DateTime startTime;

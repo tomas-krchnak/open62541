@@ -90,5 +90,3 @@ Pipfile.lock
 
 # project local vim settings
 .vim/
-/.vs
-/examples/build
