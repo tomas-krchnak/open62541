@@ -45,7 +45,7 @@ UA_HistoryDataBackend_SQLite_TimeBuffered(const char *dbFilePath,
                                           UA_Boolean resetHistory);
 
 void UA_EXPORT
-UA_HistoryDataBackend_SQLite_clear(UA_HistoryDataBackend backend);
+UA_HistoryDataBackend_SQLite_clear(UA_HistoryDataBackend *backend);
 
 _UA_END_DECLS
 

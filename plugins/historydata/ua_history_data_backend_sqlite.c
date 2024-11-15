@@ -14,8 +14,8 @@ typedef char*              SQLCharBuffer;
 typedef const char *       ConstCharBuffer;
 typedef const char * const FixedCharBuffer;
 
-static const FixedCharBuffer COLUMN_VERSION = "VERSION";
-static const FixedCharBuffer COLUMN_DATAVALUE = "DATAVALUE";
+static FixedCharBuffer COLUMN_VERSION = "VERSION";
+static FixedCharBuffer COLUMN_DATAVALUE = "DATAVALUE";
 
 #define LOWLEVELITF_NOTIMPL (NULL)
 
